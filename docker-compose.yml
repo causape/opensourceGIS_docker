@@ -12,7 +12,7 @@ services:
       POSTGRES_USER: gis
       POSTGRES_PASSWORD: password
     ports:
-      - "5433:5432" # PostgreSQL default port
+      - "5431:5432" # PostgreSQL default port
     volumes:
       - ./data/postgis:/var/lib/postgresql/data # Data persistence
 

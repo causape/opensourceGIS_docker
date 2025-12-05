@@ -56,7 +56,7 @@ All credentials and ports are configured in `docker-compose.yml`.
 #### From the command line
 
 ```bash
-psql -h localhost -p 5433 -U gis -d gis
+psql -h localhost -p 5431 -U gis -d gis
 ```
 
 ---
@@ -71,6 +71,20 @@ psql -h localhost -p 5433 -U gis -d gis
 
 * Access via browser: [http://localhost:5050/](http://localhost:5050/)
 * Use credentials from your `docker-compose.yml`.
+* Register New Server:
+  * Right button Server:
+    * Register new server with the following parameters:
+
+
+| Field                 | Value                      |
+|-----------------------|----------------------------|
+| `Name`                | Choose the name you prefer |
+| `Host name / address` | localhost                  |
+| `Port`                | 5432                       |
+| `Username`            | gis                        |
+| `Database`            | gis                        |
+| `Password`            | password                   |
+
 
 ---
 

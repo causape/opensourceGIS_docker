@@ -18,7 +18,7 @@ services:
 
   # 2. OGC Map Server (GeoServer with WFS/WMS/WCS)
   geoserver:
-    image: kartoza/geoserver:latest # Includes common extensions (e.g., PostGIS support)
+    image: kartoza/geoserver:2.24.0 # Includes common extensions (e.g., PostGIS support)
     container_name: geoserver_app
     restart: always
     depends_on:

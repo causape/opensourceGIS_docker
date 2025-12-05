@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # 1. Spatial Database (PostgreSQL 15 + PostGIS 3.3)
+  postgis:
+    image: postgis/postgis:15-3.3 # Recommended to use specific versions
+    container_name: postgis_db
+    restart: always
+    environment:
+      # Database credentials
+      POSTGRES_DB: gis
+      POSTGRES_USER: gis
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432" # PostgreSQL default port
+    volumes:
+      - ./data/postgis:/var/lib/postgresql/data # Data persistence
+
+  # 2. OGC Map Server (GeoServer with WFS/WMS/WCS)
+  geoserver:
+    image: kartoza/geoserver:latest # Includes common extensions (e.g., PostGIS support)
+    container_name: geoserver_app
+    restart: always
+    depends_on:
+      - postgis # Ensure that the DB starts first
+    ports:
+      - "8080:8080" # Access GeoServer at http://localhost:8080/geoserver
+    environment:
+      # GeoServer configuration
+      GEOSERVER_ADMIN_PASSWORD: admin_geoserver # GeoServer admin password (user: admin)
+      # Connection settings so GeoServer can reach the database
+      POSTGRES_HOST: postgis # IMPORTANT: Use the Docker service name
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: gis
+      POSTGRES_PASSWORD: password
+    volumes:
+      - ./data/geoserver:/opt/geoserver/data_dir # Persistent GeoServer config
+
+  # 3. Visual Database Administration Tool (PgAdmin)
+  pgadmin:
+    image: dpage/pgadmin4 # Official PgAdmin 4 image
+    container_name: pgadmin_app
+    restart: always
+    ports:
+      - "5050:80" # Access PgAdmin at http://localhost:5050
+    environment:
+      # PgAdmin web interface credentials
+      PGADMIN_DEFAULT_EMAIL: postgres@postgres.com
+      PGADMIN_DEFAULT_PASSWORD: postgres
+    volumes:
+      - ./data/pgadmin:/var/lib/pgadmin # Persistent PgAdmin settings
+    depends_on:
+      - postgis # Ensure the DB is ready for connections
+
+# Definition of persistent volumes
+volumes:
+  data:

@@ -90,6 +90,10 @@ psql -h localhost -p 5432 -U gis -d gis
 
 * Access via browser: [http://localhost:8080/](http://localhost:8080/)
 
+1. To access the GeoServer account, you need to use the username and password configured in the .yml
+2. Use the following credentials:
+3. e.g. The credentials will be found in the following line: "GEOSERVER_ADMIN_PASSWORD: admin_geoserver # GeoServer admin password (user: admin)"
+
 ---
 
 ### Notes

@@ -11,7 +11,7 @@ We are using Docker to manage all the geographical data and perform calculations
 ## Setup
 
 1. Create a folder for your project.
-2. Clone the repo in the created folde:
+2. Clone the repo in the created folder:
 ```bash
  git clone https://github.com/causape/opensourceGIS_docker.git
 ```

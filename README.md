@@ -100,6 +100,10 @@ psql -h localhost -p 5432 -U gis -d gis
 
 * Make sure your Docker containers are running before trying to connect to any service.
 * Ports may differ if you modified the `docker-compose.yml`.
+* Be sure that the docker containers are closed before running down your computer:
+```bash
+docker compose down OR using the interface of Docker Desktop
+```
 
 
 ### Summary

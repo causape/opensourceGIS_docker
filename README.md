@@ -43,30 +43,6 @@ All credentials and ports are configured in `docker-compose.yml`.
 
 ### PostGIS
 
-#### In QGIS
-
-1. Create a new PostgreSQL connection.
-2. Use the following credentials:
-
-   * Name: (choose any)
-   * Host: `localhost`
-   * Port: `5433` (check your yml file)
-   * Database: `gis`
-   * User: `gis`
-   * Password: `password`
-
-#### From the command line
-
-```bash
-psql -h localhost -p 5432 -U gis -d gis
-```
-
----
-
-### GeoServer
-
-* Access via browser: [http://localhost:8080/](http://localhost:8080/)
-
 ---
 
 ### PgAdmin (PostgreSQL Admin)
@@ -87,6 +63,32 @@ psql -h localhost -p 5432 -U gis -d gis
 | `Database`            | gis                        |
 | `Password`            | password                   |
 
+
+---
+
+#### In QGIS
+
+1. Create a new PostgreSQL connection.
+2. Use the following credentials:
+
+   * Name: (choose any)
+   * Host: `localhost`
+   * Port: `5433` (check your yml file)
+   * Database: `gis`
+   * User: `gis`
+   * Password: `password`
+---
+#### From the command line
+
+```bash
+psql -h localhost -p 5432 -U gis -d gis
+```
+
+---
+
+### GeoServer
+
+* Access via browser: [http://localhost:8080/](http://localhost:8080/)
 
 ---
 

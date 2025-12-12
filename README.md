@@ -96,20 +96,57 @@ psql -h localhost -p 5432 -U gis -d gis
 
 ---
 
-### Notes
+# Docker GIS Stack Setup
 
-* Make sure your Docker containers are running before trying to connect to any service.
-* Ports may differ if you modified the `docker-compose.yml`.
-* Be sure that the docker containers are closed before running down your computer:
+## 1. Services
+
+| Container              | Purpose                                         | Persistence             | Access / Credentials                         |
+|------------------------|-----------------------------------------------|------------------------|---------------------------------------------|
+| **postgis_db**          | PostgreSQL + PostGIS database                  | `./data/postgis`       | Host port: 5431                              |
+| **geoserver_app**       | OGC-compliant map server (WFS/WMS/WCS)        | `./data/geoserver`     | [http://localhost:8080/geoserver](http://localhost:8080/geoserver) <br> Admin: `admin / admin_geoserver` |
+| **pgadmin_app**         | Web-based PostGIS administration               | `./data/pgadmin`       | [http://localhost:5050](http://localhost:5050) <br> User: `postgres@postgres.com` <br> Password: `postgres` |
+| **osm2pgsql_importer**  | Initial OSM import using `osm2pgsql`          | N/A                    | Runs once (restart: "no") <br> Entrypoint: `import_osm.sh` <br> Reads: `/data/initial.osm.pbf` |
+| **osm_updater**         | Apply OSM diffs periodically using Osmosis    | `./data/diffs`         | Continuous (restart: always) <br> Entrypoint: `update_osm.sh` <br> Moves applied diffs to `applied/` |
+
+---
+
+## 2. Data Flow
+
+### Initial Import (`initial.osm.pbf`)
+1. Place the full planet OSM file `initial.osm.pbf` in `./data/osm/`.
+2. `osm2pgsql_importer` waits for PostGIS to start.
+3. Imports OSM data into PostGIS tables:
+   - `planet_osm_point`
+   - `planet_osm_line`
+   - `planet_osm_polygon`
+   - `planet_osm_roads`
+4. **SLIM Mode**: 
+   - The import uses `--slim` mode.
+   - SLIM mode stores intermediate tables on disk instead of memory, which allows importing very large OSM files (like the whole planet) without running out of RAM.
+
+### Periodic Updates (`.osc.gz` diffs)
+1. Place incremental change files (diffs) like `125.osc.gz` in `./data/diffs/`.
+   - Each `.osc.gz` file contains changes (additions, deletions, modifications) to the OSM data since the last update.
+2. `osm_updater` waits for PostGIS to be ready.
+3. Applies each diff to the database using **Osmosis**.
+4. After applying, each diff is moved to `./data/diffs/applied/` to avoid reapplying.
+5. The container sleeps 24h, then checks for new diffs automatically.
+
+> Example: `125.osc.gz` is just one of these periodic diff files. In production, OSM diffs are numbered sequentially (e.g., `125.osc.gz`, `126.osc.gz`, etc.), so the updater can apply them in order to keep your database current.
+
+---
+
+## 3. Notes
+
+* The `overv/openstreetmap-tile-server` image already includes **Osmosis**, so no extra installation is needed.
+* `osm2pgsql_importer` only uses **osm2pgsql** and never touches Osmosis.
+* If you only want to import `.pbf` files and never apply incremental diffs, you can skip `osm_updater`.
+* Everything runs inside Docker containers—nothing is installed on your host system.
+* Make sure your Docker containers are running before connecting to any service.
+* Ports may differ if you modified `docker-compose.yml`.
+* Always shut down containers cleanly with:
+
 ```bash
-docker compose down OR using the interface of Docker Desktop
-```
+docker compose down
 
 
-### Summary
-
-* Everyone works on their own branch.
-* Commit frequently with clear messages.
-* Push branches to the remote repo.
-* Use Pull Requests to merge changes to `main`.
-* Always update your local `main` before starting work.

@@ -135,9 +135,19 @@ psql -h localhost -p 5432 -U gis -d gis
 > Example: `125.osc.gz` is just one of these periodic diff files. In production, OSM diffs are numbered sequentially (e.g., `125.osc.gz`, `126.osc.gz`, etc.), so the updater can apply them in order to keep your database current.
 
 ---
+### Important Note on Shell Scripts
 
+All `.sh` files must use **Unix (LF) line endings**.  
+If the scripts are edited on Windows, tools like **Notepad++** can convert them:
+
+1. Open the `.sh` file in Notepad++.
+2. Go to `Edit` → `EOL Conversion` → `Unix (LF)`.
+3. Save the file.
+
+Failing to do this may cause syntax errors such as:
+
+---
 ## 3. Notes
-
 * The `overv/openstreetmap-tile-server` image already includes **Osmosis**, so no extra installation is needed.
 * `osm2pgsql_importer` only uses **osm2pgsql** and never touches Osmosis.
 * If you only want to import `.pbf` files and never apply incremental diffs, you can skip `osm_updater`.

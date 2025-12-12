@@ -1,57 +1,70 @@
-version: '3.8'
-
 services:
-  # 1. Spatial Database (PostgreSQL 15 + PostGIS 3.3)
   postgis:
-    image: postgis/postgis:15-3.3 # Recommended to use specific versions
+    image: postgis/postgis:15-3.3
     container_name: postgis_db
     restart: always
     environment:
-      # Database credentials
       POSTGRES_DB: gis
       POSTGRES_USER: gis
       POSTGRES_PASSWORD: password
     ports:
-      - "5431:5432" # PostgreSQL default port
+      - "5431:5432"
     volumes:
-      - ./data/postgis:/var/lib/postgresql/data # Data persistence
+      - ./data/postgis:/var/lib/postgresql/data
 
-  # 2. OGC Map Server (GeoServer with WFS/WMS/WCS)
   geoserver:
-    image: kartoza/geoserver:2.24.0 # Includes common extensions (e.g., PostGIS support)
+    image: kartoza/geoserver:2.24.0
     container_name: geoserver_app
     restart: always
     depends_on:
-      - postgis # Ensure that the DB starts first
+      - postgis
     ports:
-      - "8080:8080" # Access GeoServer at http://localhost:8080/geoserver
+      - "8080:8080"
     environment:
-      # GeoServer configuration
-      GEOSERVER_ADMIN_PASSWORD: admin_geoserver # GeoServer admin password (user: admin)
-      # Connection settings so GeoServer can reach the database
-      POSTGRES_HOST: postgis # IMPORTANT: Use the Docker service name
+      GEOSERVER_ADMIN_PASSWORD: admin_geoserver
+      POSTGRES_HOST: postgis
       POSTGRES_PORT: 5432
       POSTGRES_USER: gis
       POSTGRES_PASSWORD: password
     volumes:
-      - ./data/geoserver:/opt/geoserver/data_dir # Persistent GeoServer config
+      - ./data/geoserver:/opt/geoserver/data_dir
 
-  # 3. Visual Database Administration Tool (PgAdmin)
   pgadmin:
-    image: dpage/pgadmin4 # Official PgAdmin 4 image
+    image: dpage/pgadmin4
     container_name: pgadmin_app
     restart: always
     ports:
-      - "5050:80" # Access PgAdmin at http://localhost:5050
+      - "5050:80"
     environment:
-      # PgAdmin web interface credentials
       PGADMIN_DEFAULT_EMAIL: postgres@postgres.com
       PGADMIN_DEFAULT_PASSWORD: postgres
     volumes:
-      - ./data/pgadmin:/var/lib/pgadmin # Persistent PgAdmin settings
+      - ./data/pgadmin:/var/lib/pgadmin
     depends_on:
-      - postgis # Ensure the DB is ready for connections
+      - postgis
 
-# Definition of persistent volumes
-volumes:
-  data:
+  osm2pgsql_importer:
+    image: overv/openstreetmap-tile-server:latest
+    container_name: osm2pgsql_importer
+    restart: "no"
+    depends_on:
+      - postgis
+    env_file:
+      - .env
+    volumes:
+      - ./data/osm:/data
+      - ./import_osm.sh:/usr/local/bin/import_osm.sh
+    entrypoint: ["/bin/sh", "/usr/local/bin/import_osm.sh"]
+
+  osm_updater:
+    image: overv/openstreetmap-tile-server:latest
+    container_name: osm_updater
+    restart: always
+    depends_on:
+      - postgis
+    env_file:
+      - .env
+    volumes:
+      - ./data/diffs:/data/diffs
+      - ./update_osm.sh:/usr/local/bin/update_osm.sh
+    entrypoint: ["/bin/sh", "/usr/local/bin/update_osm.sh"]

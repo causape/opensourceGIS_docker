@@ -20,5 +20,5 @@ while true; do
   done
 
   echo "Sleeping 86400s (24h) before checking new diffs..."
-  sleep 60
+  sleep 3600
 done

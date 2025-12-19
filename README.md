@@ -1,3 +1,6 @@
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
+
 # Docker GIS Project
 
 We are using Docker to manage all the geographical data and perform calculations efficiently.

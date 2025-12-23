@@ -55,8 +55,10 @@ echo "Starting OSM import (this may take a long time)..."
 
 osm2pgsql \
   --slim \
+  --output=flex \
+  --style /styles/osm.lua \
   --flat-nodes /data/flatnodes.bin \
-  --cache 3000 \
+  --cache 2000 \
   --number-processes 2 \
   -d "$PGDATABASE" \
   -U "$PGUSER" \

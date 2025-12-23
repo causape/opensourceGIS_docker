@@ -9,60 +9,35 @@ done
 # -----------------------------
 # Variables
 # -----------------------------
-OSM_URL="https://download.geofabrik.de/europe/germany-latest.osm.pbf"
-OSM_FILE="/data/germany-latest.osm.pbf"
+DUMP_FILE="/data/filtered_osm_data.sql.gz"
 
 # -----------------------------
-# Download OSM data if missing
-# -----------------------------
-if [ ! -f "$OSM_FILE" ]; then
-  echo "Downloading Germany OSM data from Geofabrik..."
-  wget -O "$OSM_FILE" "$OSM_URL"
-else
-  echo "OSM file already exists, skipping download."
-fi
-
-# -----------------------------
-# Check if OSM data is really present
-# (table must exist AND contain rows)
+# 1. Check if DB is already populated
 # -----------------------------
 ROWS=$(psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -tAc \
-"SELECT COUNT(*) FROM planet_osm_point;" 2>/dev/null || echo 0)
+"SELECT COUNT(*) FROM education_poi LIMIT 1;" 2>/dev/null || echo 0)
 
 if [ "$ROWS" -gt 0 ]; then
-  echo "OSM data already imported ($ROWS rows found). Skipping import."
+  echo "Data already exists in database. Nothing to do."
   exit 0
 fi
 
-echo "OSM data missing or incomplete. Cleaning old tables..."
-
 # -----------------------------
-# Drop partially imported tables
+# 2. Check for SQL Dump
 # -----------------------------
-psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" <<EOF
-DROP TABLE IF EXISTS
-planet_osm_point,
-planet_osm_line,
-planet_osm_polygon,
-planet_osm_roads;
-EOF
-
-# -----------------------------
-# Import OSM data (SLIM mode)
-# flat-nodes is strongly recommended for stability
-# -----------------------------
-echo "Starting OSM import (this may take a long time)..."
-
-osm2pgsql \
-  --slim \
-  --output=flex \
-  --style /styles/osm.lua \
-  --flat-nodes /data/flatnodes.bin \
-  --cache 2000 \
-  --number-processes 2 \
-  -d "$PGDATABASE" \
-  -U "$PGUSER" \
-  -H "$PGHOST" \
-  "$OSM_FILE"
-
-echo "OSM import completed successfully."
+if [ -f "$DUMP_FILE" ]; then
+  echo "Found SQL Dump ($DUMP_FILE). Starting import..."
+  
+  # Importamos el archivo comprimido directamente a Postgres
+  zcat "$DUMP_FILE" | psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE"
+  
+  echo "--------------------------------------------------"
+  echo "IMPORT COMPLETED SUCCESSFULLY FROM SQL DUMP"
+  echo "--------------------------------------------------"
+else
+  echo "--------------------------------------------------"
+  echo "ERROR: SQL Dump not found at $DUMP_FILE"
+  echo "No heavy import will be performed. System idle."
+  echo "--------------------------------------------------"
+  exit 1
+fi

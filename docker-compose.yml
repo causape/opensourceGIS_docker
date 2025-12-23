@@ -38,8 +38,6 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: postgres@postgres.com
       PGADMIN_DEFAULT_PASSWORD: postgres
-    volumes:
-      - ./data/pgadmin:/var/lib/pgadmin
     depends_on:
       - postgis
 

@@ -11,60 +11,70 @@ done
 # -----------------------------
 OSM_URL="https://download.geofabrik.de/europe/germany-latest.osm.pbf"
 OSM_FILE="/data/germany-latest.osm.pbf"
-FLAT_NODES="/data/flatnodes.bin"
+# Path to the massive flat-nodes file (stored in your mounted volume)
 DUMP_FILE="/data/filtered_osm_data.sql.gz"
 
 # -----------------------------
-# 1. Check if data is already in DB
+# Download OSM data if missing
 # -----------------------------
+if [ ! -f "$OSM_FILE" ]; then
+  echo "Downloading Germany OSM data from Geofabrik..."
+  wget -O "$OSM_FILE" "$OSM_URL"
+else
+  echo "OSM file already exists, skipping download."
+fi
+
+# -----------------------------
+# Check if data is already imported
+# -----------------------------
+# We check one of your custom tables to see if the import was already done
 ROWS=$(psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -tAc \
 "SELECT COUNT(*) FROM education_poi LIMIT 1;" 2>/dev/null || echo 0)
 
 if [ "$ROWS" -gt 0 ]; then
-  echo "Data already exists in database. Skipping everything."
-  exit 0
+  echo "Data already exists in database. Skipping import."
+else
+  echo "Cleaning up old tables..."
+  psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" <<EOF
+DROP TABLE IF EXISTS 
+  education_poi, education_area, leisure_poi, leisure_area, 
+  pedestrian_roads, tram_stations, landuse_areas;
+EOF
+
+  echo "Starting OSM import using Flat-nodes mode (Fastest)..."
+  
+ 
+  osm2pgsql \
+    --slim \
+    --output=flex \
+    --style /styles/osm.lua \
+    --cache 12000 \
+    --number-processes 2 \
+    -d "$PGDATABASE" \
+    -U "$PGUSER" \
+    -H "$PGHOST" \
+    "$OSM_FILE"
+
+  echo "OSM import completed successfully."
 fi
 
 # -----------------------------
-# 2. Try to restore from SQL Dump first
+# Generate SQL Dump for sharing
 # -----------------------------
-if [ -f "$DUMP_FILE" ]; then
-  echo "Found SQL Dump ($DUMP_FILE). Importing directly..."
-  zcat "$DUMP_FILE" | psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE"
-  echo "SQL Import finished successfully."
-  exit 0
-fi
+echo "Generating compressed SQL Dump of the filtered data..."
 
-# -----------------------------
-# 3. Fallback: Heavy import (PBF + Flat-nodes)
-# -----------------------------
-echo "No SQL Dump found. Starting heavy OSM import process..."
-
-# Download PBF if missing
-if [ ! -f "$OSM_FILE" ]; then
-  echo "Downloading Germany OSM data..."
-  wget -O "$OSM_FILE" "$OSM_URL"
-fi
-
-echo "Starting osm2pgsql Flex import (this will create flatnodes)..."
-osm2pgsql \
-  --slim \
-  --output=flex \
-  --style /styles/osm.lua \
-  --flat-nodes "$FLAT_NODES" \
-  --cache 12000 \
-  --number-processes 2 \
-  -d "$PGDATABASE" \
-  -U "$PGUSER" \
-  -H "$PGHOST" \
-  "$OSM_FILE"
-
-# 4. Generate the Dump for next time
-echo "Generating SQL Dump for future fast imports..."
+# This exports ONLY the specific tables you filtered in Lua
 pg_dump -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" \
-  -t education_poi -t education_area -t leisure_poi -t leisure_area \
-  -t pedestrian_roads -t tram_stations -t landuse_areas | gzip > "$DUMP_FILE"
+  -t education_poi \
+  -t education_area \
+  -t leisure_poi \
+  -t leisure_area \
+  -t pedestrian_roads \
+  -t tram_stations \
+  -t landuse_areas | gzip > "$DUMP_FILE"
 
 echo "--------------------------------------------------"
 echo "PROCESS FINISHED!"
+echo "Database Dump: ./data/osm/filtered_osm_data.sql.gz"
+echo "Flat-nodes file: ./data/osm/flatnodes.bin (Safe to delete if no longer needed)"
 echo "--------------------------------------------------"

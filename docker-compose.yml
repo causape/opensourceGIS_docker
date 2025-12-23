@@ -53,6 +53,7 @@ services:
       - .env
     volumes:
       - ./data/osm:/data
+      - ./styles:/styles
       - ./import_osm.sh:/usr/local/bin/import_osm.sh
     entrypoint: ["/bin/sh", "/usr/local/bin/import_osm.sh"]
 

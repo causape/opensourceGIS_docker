@@ -13,7 +13,7 @@ mkdir -p /data/diffs/applied
 DUMP_FILE="/data/osm/filtered_osm_data.sql.gz"
 
 while true; do
-  # 1. Look for and apply new OSM diff files (.osc.gz)
+  # 1. Look for and apply new OSM diff files (.osc.gz). This will update the tables with the new info in diff files.
   for diff in /data/diffs/*.osc.gz; do
     # Skip if no files are found
     [ -e "$diff" ] || continue
@@ -37,7 +37,7 @@ while true; do
     mv "$diff" /data/diffs/applied/
   done
 
-  # 2 Recalculate buffers if OSM data changed-------------------
+  # 2 Recalculate buffers, it always update data 
   echo "OSM data updated. Recalculating city buffers..."
   python3 /usr/local/bin/app.py
   echo "Buffer recalculation finished."

@@ -1,7 +1,7 @@
 import psycopg2
 import time
 
-# Connection configuration
+# Connection configuration for the Docker network
 conn_params = {
     "host": "postgis",
     "port": "5432",
@@ -14,200 +14,135 @@ def get_connection():
     """Establishes and returns a database connection."""
     return psycopg2.connect(**conn_params)
 
-def table_has_data(cursor, table_name):
-    """Checks if a table exists and contains at least one record."""
-    cursor.execute(f"""
-        SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_name = '{table_name}'
-        );
-    """)
-    exists = cursor.fetchone()[0]
-    if exists:
-        cursor.execute(f"SELECT COUNT(*) FROM {table_name};")
-        return cursor.fetchone()[0] > 0
-    return False
+def table_exists(cursor, table_name):
+    """Checks if a table exists in the database."""
+    cursor.execute(f"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '{table_name}');")
+    return cursor.fetchone()[0]
 
 def generate_base_buffers(cursor):
-    """Creates individual 100m buffers for all OSM categories."""
-    if table_has_data(cursor, 'city_buffers'):
-        print("INFO: 'city_buffers' already exists. Skipping base generation.")
-        return
-
+    """
+    Creates city_buffers if it doesn't exist. 
+    If it exists, it only inserts NEW elements from OSM tables.
+    Returns the count of new elements added.
+    """
     start_time = time.time()
-    print("Creating individual 100m buffers in 'city_buffers'...")
     
-    cursor.execute("DROP TABLE IF EXISTS city_buffers CASCADE;")
+    # 1. Create the table with a UNIQUE constraint to allow incremental updates
     cursor.execute("""
-        CREATE TABLE city_buffers (
+        CREATE TABLE IF NOT EXISTS city_buffers (
             id SERIAL PRIMARY KEY,
-            original_osm_id BIGINT,
+            original_osm_id BIGINT UNIQUE, 
             category TEXT,
             sub_type TEXT,
             name TEXT,
             geom GEOMETRY(MultiPolygon, 4326)
         );
+        CREATE INDEX IF NOT EXISTS idx_city_buffers_geom ON city_buffers USING GIST (geom);
     """)
 
+    print("Checking for new OSM features to process...")
+
+    # 2. Incremental Insert: Only rows where osm_id is NOT yet in city_buffers
+    # 'ON CONFLICT DO NOTHING' ensures we don't recalculate existing buffers
     insert_sql = """
     INSERT INTO city_buffers (original_osm_id, category, sub_type, name, geom)
-    SELECT osm_id, 'education', amenity, name, 
-           ST_Multi(ST_Transform(ST_Buffer(ST_Transform(geom, 4326)::geography, 100)::geometry, 4326))
-    FROM education_area
-    UNION ALL
-    SELECT osm_id, 'education', amenity, name, 
-           ST_Multi(ST_Transform(ST_Buffer(ST_Transform(geom, 4326)::geography, 100)::geometry, 4326))
-    FROM education_poi
-    UNION ALL
-    SELECT osm_id, 'leisure', leisure, name, 
-           ST_Multi(ST_Transform(ST_Buffer(ST_Transform(geom, 4326)::geography, 100)::geometry, 4326))
-    FROM leisure_area
-    UNION ALL
-    SELECT osm_id, 'transport', public_transport, 'Tram Station', 
-           ST_Multi(ST_Transform(ST_Buffer(ST_Transform(geom, 4326)::geography, 100)::geometry, 4326))
-    FROM tram_stations;
+    SELECT osm_id, category, sub_type, name, geom FROM (
+        SELECT osm_id, 'education' as category, amenity as sub_type, name, 
+               ST_Multi(ST_Transform(ST_Buffer(ST_Transform(geom, 4326)::geography, 100)::geometry, 4326)) as geom
+        FROM education_area
+        UNION ALL
+        SELECT osm_id, 'education' as category, amenity as sub_type, name, 
+               ST_Multi(ST_Transform(ST_Buffer(ST_Transform(geom, 4326)::geography, 100)::geometry, 4326)) as geom
+        FROM education_poi
+        UNION ALL
+        SELECT osm_id, 'leisure' as category, leisure as sub_type, name, 
+               ST_Multi(ST_Transform(ST_Buffer(ST_Transform(geom, 4326)::geography, 100)::geometry, 4326)) as geom
+        FROM leisure_area
+        UNION ALL
+        SELECT osm_id, 'transport' as category, public_transport as sub_type, 'Tram Station' as name, 
+               ST_Multi(ST_Transform(ST_Buffer(ST_Transform(geom, 4326)::geography, 100)::geometry, 4326)) as geom
+        FROM tram_stations
+    ) AS source
+    ON CONFLICT (original_osm_id) DO NOTHING;
     """
     cursor.execute(insert_sql)
-    cursor.execute("CREATE INDEX idx_city_buffers_geom ON city_buffers USING GIST (geom);")
+    new_rows_count = cursor.rowcount
     
-    end_time = time.time()
-    print(f"Success: Individual buffers created in {end_time - start_time:.2f} seconds.")
+    print(f"Incremental Update: {new_rows_count} new elements buffered in {time.time() - start_time:.2f}s.")
+    return new_rows_count
 
-def generate_merged_buffers(cursor):
+def generate_merged_buffers(cursor, force_update=False):
     """
-    Scalable dissolve-by-overlap for large datasets (500k+ buffers).
-    Uses spatial grid partitioning to avoid global clustering.
+    Recalculates service islands (merged table).
+    This only runs if the table is missing OR if new data was added to city_buffers.
     """
+    exists = table_exists(cursor, 'city_buffers_merged')
 
-    if table_has_data(cursor, 'city_buffers_merged'):
-        print("INFO: 'city_buffers_merged' already exists. Skipping.")
+    if not force_update and exists:
+        print("INFO: No changes detected. Skipping global merge.")
         return
 
     start_time = time.time()
-    print("Merging overlapping buffers using spatial grid partitioning...")
+    print("Refreshing merged service islands (Spatial Grid Mode)...")
 
-    # --- SAFE PERFORMANCE TUNING ---
+    # Increase memory for the spatial operation
     cursor.execute("SET work_mem = '1GB';")
-    cursor.execute("SET maintenance_work_mem = '2GB';")
 
-    # -------------------------------------------------
-    # 1. CREATE SPATIAL GRID (~500m cells)
-    # -------------------------------------------------
-    cursor.execute("DROP TABLE IF EXISTS city_buffer_grid;")
+    # We refresh the whole merged table to ensure that new overlapping 
+    # elements are correctly dissolved into existing islands.
+    cursor.execute("DROP TABLE IF EXISTS city_buffer_grid CASCADE;")
     cursor.execute("""
         CREATE TABLE city_buffer_grid AS
-        SELECT
-            ST_SetSRID(
-                (ST_SquareGrid(
-                    0.005,          -- ~500m in EPSG:4326
-                    ST_Extent(geom)
-                )).geom,
-                4326
-            ) AS geom
+        SELECT ST_SetSRID((ST_SquareGrid(0.005, ST_Extent(geom))).geom, 4326) AS geom
         FROM city_buffers;
-    """)
-    cursor.execute("""
-        CREATE INDEX idx_city_buffer_grid_geom
-        ON city_buffer_grid
-        USING GIST (geom);
+        CREATE INDEX ON city_buffer_grid USING GIST (geom);
     """)
 
-    # -------------------------------------------------
-    # 2. ASSIGN BUFFERS TO GRID CELLS
-    # -------------------------------------------------
-    cursor.execute("DROP TABLE IF EXISTS city_buffers_gridded;")
+    cursor.execute("DROP TABLE IF EXISTS city_buffers_merged;")
     cursor.execute("""
-        CREATE TABLE city_buffers_gridded AS
-        SELECT
-            b.category,
-            b.sub_type,
-            b.name,
-            ST_SnapToGrid(b.geom, 0.0001) AS geom,
-            g.geom AS grid_geom
-        FROM city_buffers b
-        JOIN city_buffer_grid g
-        ON ST_Intersects(b.geom, g.geom);
-    """)
-    cursor.execute("""
-        CREATE INDEX idx_city_buffers_gridded_geom
-        ON city_buffers_gridded
-        USING GIST (geom);
-    """)
-
-    # -------------------------------------------------
-    # 3. LOCAL CLUSTER + DISSOLVE (FIXED)
-    # -------------------------------------------------
-    cursor.execute("""
-        DROP TABLE IF EXISTS city_buffers_merged;
-
         CREATE TABLE city_buffers_merged AS
-        WITH clustered AS (
-            SELECT
-                category,
-                sub_type,
-                name,
-                geom,
-                grid_geom,
-                ST_ClusterIntersecting(geom)
-                    OVER (PARTITION BY grid_geom) AS cluster_id
-            FROM city_buffers_gridded
+        WITH gridded AS (
+            SELECT b.category, b.sub_type, b.name, b.geom, g.geom as grid_geom
+            FROM city_buffers b
+            JOIN city_buffer_grid g ON ST_Intersects(b.geom, g.geom)
+        ),
+        clustered AS (
+            SELECT *, ST_ClusterIntersecting(geom) OVER (PARTITION BY grid_geom) AS cluster_id
+            FROM gridded
         )
-        SELECT
+        SELECT 
             string_agg(DISTINCT category, ', ') AS categories,
             string_agg(DISTINCT sub_type, ', ') AS sub_types,
-            string_agg(
-                DISTINCT sub_type || ': ' || COALESCE(name, 'Unknown'),
-                ' | '
-            ) AS detailed_info,
+            string_agg(DISTINCT sub_type || ': ' || COALESCE(name, 'Unknown'), ' | ') AS detailed_info,
             COUNT(*) AS element_count,
-            ST_Multi(
-                ST_UnaryUnion(
-                    ST_Collect(geom)
-                )
-            ) AS geom
+            ST_Multi(ST_UnaryUnion(ST_Collect(ST_SnapToGrid(geom, 0.0001)))) AS geom
         FROM clustered
         GROUP BY grid_geom, cluster_id;
     """)
-
-    cursor.execute("""
-        CREATE INDEX idx_city_buffers_merged_geom
-        ON city_buffers_merged
-        USING GIST (geom);
-    """)
-
-    end_time = time.time()
-    print(f"Success: merged buffers created in {end_time - start_time:.2f} seconds.")
-
-
+    
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_merged_geom ON city_buffers_merged USING GIST (geom);")
+    print(f"Success: Merged table updated in {time.time() - start_time:.2f}s.")
 
 def main():
-    """Main execution entry point."""
+    """Main incremental execution entry point."""
     conn = None
-    total_start = time.time()
     try:
         conn = get_connection()
         cursor = conn.cursor()
 
-        # Step 1: Generate individual buffers
-        generate_base_buffers(cursor)
+        # Step 1: Add new buffers (returns count of new items)
+        new_items_added = generate_base_buffers(cursor)
         conn.commit()
 
-        # Step 2: Merge overlapping polygons (UNCOMMENTED & READY)
-        generate_merged_buffers(cursor)
+        # Step 2: Refresh merge ONLY if there is new data
+        generate_merged_buffers(cursor, force_update=(new_items_added > 0))
         conn.commit()
-
-        total_end = time.time()
-        print("-" * 30)
-        print(f"All processes completed in {total_end - total_start:.2f} seconds.")
 
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
-        if conn:
-            conn.rollback()
+        if conn: conn.rollback()
     finally:
-        if conn:
-            cursor.close()
-            conn.close()
+        if conn: conn.close()
 
 if __name__ == "__main__":
     main()

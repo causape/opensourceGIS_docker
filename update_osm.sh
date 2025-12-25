@@ -67,5 +67,5 @@ while true; do
 
   # 3. Wait for 1 hour before checking for new updates again
   echo "Sleeping 3600s (1h) before next check..."
-  sleep 60
+  sleep 3600
 done

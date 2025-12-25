@@ -35,19 +35,9 @@ if [ -f "$DUMP_FILE" ]; then
   exit 0
 fi
 
-# -----------------------------
-# 2. Download OSM data if missing (Fallback)
-# -----------------------------
-echo "No SQL Dump found. Starting standard OSM processing..."
-if [ ! -f "$OSM_FILE" ]; then
-  echo "Downloading Germany OSM data from Geofabrik..."
-  wget -O "$OSM_FILE" "$OSM_URL"
-else
-  echo "OSM file already exists, skipping download."
-fi
 
 # -----------------------------
-# 3. Check if data is already imported
+# 2. Check if data is already imported
 # -----------------------------
 ROWS=$(psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -tAc \
 "SELECT COUNT(*) FROM education_poi LIMIT 1;" 2>/dev/null || echo 0)
@@ -55,6 +45,16 @@ ROWS=$(psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -tAc \
 if [ "$ROWS" -gt 0 ]; then
   echo "Data already exists in database. Skipping import."
 else
+  # -----------------------------
+  # 3. Download OSM data if missing (Fallback)
+  # -----------------------------
+  echo "No SQL Dump found. Starting standard OSM processing..."
+  if [ ! -f "$OSM_FILE" ]; then
+    echo "Downloading Germany OSM data from Geofabrik..."
+    wget -O "$OSM_FILE" "$OSM_URL"
+  else
+    echo "OSM file already exists, skipping download."
+  fi
   echo "Cleaning up old tables..."
   psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" <<EOF
 DROP TABLE IF EXISTS 
@@ -80,23 +80,8 @@ EOF
 
   echo "OSM import completed successfully."
 fi
-
 # -----------------------------
-# 4. Generate SQL Dump for future use
-# -----------------------------
-echo "Generating compressed SQL Dump of the filtered data..."
-
-pg_dump -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" \
-  -t education_poi \
-  -t education_area \
-  -t leisure_poi \
-  -t leisure_area \
-  -t pedestrian_roads \
-  -t tram_stations \
-  -t landuse_areas | gzip > "$DUMP_FILE"
-
-# -----------------------------
-# 5. Cleanup
+# 4. Cleanup
 # -----------------------------
 echo "Cleaning up PBF file..."
 rm -f "$OSM_FILE"

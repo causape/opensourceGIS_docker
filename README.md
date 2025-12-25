@@ -101,65 +101,77 @@ psql -h localhost -p 5432 -U gis -d gis
 
 # Docker GIS Stack Setup
 
-## 1. Services
+# Automated Docker GIS Stack: OSM Incremental Processing & Spatial Analysis
 
-| Container              | Purpose                                         | Persistence             | Access / Credentials                         |
-|------------------------|-----------------------------------------------|------------------------|---------------------------------------------|
-| **postgis_db**          | PostgreSQL + PostGIS database                  | `./data/postgis`       | Host port: 5431                              |
-| **geoserver_app**       | OGC-compliant map server (WFS/WMS/WCS)        | `./data/geoserver`     | [http://localhost:8080/geoserver](http://localhost:8080/geoserver) <br> Admin: `admin / admin_geoserver` |
-| **pgadmin_app**         | Web-based PostGIS administration               | `./data/pgadmin`       | [http://localhost:5050](http://localhost:5050) <br> User: `postgres@postgres.com` <br> Password: `postgres` |
-| **osm2pgsql_importer**  | Initial OSM import using `osm2pgsql`          | N/A                    | Runs once (restart: "no") <br> Entrypoint: `import_osm.sh` <br> Reads: `/data/initial.osm.pbf` |
-| **osm_updater**         | Apply OSM diffs periodically using Osmosis    | `./data/diffs`         | Continuous (restart: always) <br> Entrypoint: `update_osm.sh` <br> Moves applied diffs to `applied/` |
+This repository contains a containerized GIS environment designed for automated OpenStreetMap (OSM) data ingestion, incremental updates, and custom spatial analysis. The stack transforms raw OSM data into "Service Islands" with aggregated infrastructure data using a Python-based analytical engine.
+
+## 1. System Services
+
+| Service | Image | Purpose | Persistence & Access |
+| :--- | :--- | :--- | :--- |
+| **postgis_db** | `postgis/postgis:15-3.3` | Core PostGIS database. | **Port:** 5431 |
+| **geoserver_app** | `kartoza/geoserver` | OGC Map Server (WFS/WMS). | [http://localhost:8080](http://localhost:8080) (`admin` / `admin_geoserver`) |
+| **pgadmin_app** | `dpage/pgadmin4` | Web-based Database UI. | [http://localhost:5050](http://localhost:5050) |
+| **osm2pgsql_importer**| `overv/tile-server` | Initial bootstrap loader. | Runs once (SQL Dump > PBF). |
+| **osm_updater** | `Custom Python/Alpine` | Analytical engine & updater. | **Continuous 1-hour cycle**. |
+
+---
+
+## 2. Data Workflow
+
+### A. Initial Import Logic
+When the stack starts, `import_osm.sh` follows a priority-based bootstrap:
+* **Fast Import (SQL Dump):** If `/data/filtered_osm_data.sql.gz` exists, it restores the database directly for immediate deployment.
+* **Standard Import (PBF):** If no dump is found, it downloads the latest Germany PBF, cleans old tables, and runs `osm2pgsql` in **Flex Output** mode using the custom `styles/osm.lua` schema.
+
+
+
+### B. The Updater Loop (`osm_updater`)
+This service runs a continuous 60-minute loop to keep data current:
+1. **Apply Diffs:** Scans `./data/diffs/` for `.osc.gz` files and applies them via `osm2pgsql --append` to update source tables.
+2. **Trigger `app.py`:** Executes the Python analysis engine to recalculate spatial buffers.
+3. **Generate Dump:** Generates a fresh `.sql.gz` dump for future fast-start deployments.
+4. **Idle Phase:** Sleeps for 1 hour before the next check.
 
 ---
 
-## 2. Data Flow
+## 3. Spatial Analysis Pipeline (`app.py`)
 
-### Initial Import (`initial.osm.pbf`)
-1. Place the full planet OSM file `initial.osm.pbf` in `./data/osm/`.
-2. `osm2pgsql_importer` waits for PostGIS to start.
-3. Imports OSM data into PostGIS tables:
-   - `planet_osm_point`
-   - `planet_osm_line`
-   - `planet_osm_polygon`
-   - `planet_osm_roads`
-4. **SLIM Mode**: 
-   - The import uses `--slim` mode.
-   - SLIM mode stores intermediate tables on disk instead of memory, which allows importing very large OSM files (like the whole planet) without running out of RAM.
+The `app.py` script is the core analytical engine, transforming raw features into structured "Service Islands".
 
-### Periodic Updates (`.osc.gz` diffs)
-1. Place incremental change files (diffs) like `125.osc.gz` in `./data/diffs/`.
-   - Each `.osc.gz` file contains changes (additions, deletions, modifications) to the OSM data since the last update.
-2. `osm_updater` waits for PostGIS to be ready.
-3. Applies each diff to the database using **Osmosis**.
-4. After applying, each diff is moved to `./data/diffs/applied/` to avoid reapplying.
-5. The container sleeps 24h, then checks for new diffs automatically.
+### Phase I: Single Feature Buffering
+The system identifies infrastructure (schools, tram stops, playgrounds) and generates a **100-meter proximity buffer** around each:
+* **Coordinate Transformation:** Data is transformed from `EPSG:3857` to `EPSG:4326` for consistent geography-based buffering.
+* **Deduplication:** A `UNIQUE` constraint on `original_osm_id` prevents duplicate geometries even if an update process restarts.
 
-> Example: `125.osc.gz` is just one of these periodic diff files. In production, OSM diffs are numbered sequentially (e.g., `125.osc.gz`, `126.osc.gz`, etc.), so the updater can apply them in order to keep your database current.
+### Phase II: Spatial Partitioning (Grid Mode)
+To handle large-scale datasets like the whole of Germany without exceeding RAM limits:
+* **Grid Creation:** The map is divided into a virtual grid of 0.005-degree squares.
+* **Clustering:** Overlapping buffers are grouped within these cells using `ST_ClusterIntersecting`.
 
----
-### Important Note on Shell Scripts
+### Phase III: Data Absorption & Aggregation
+When buffers overlap, they dissolve into a single "Service Island" that absorbs data from its constituent parts:
+* **Element Count:** Calculates the total number of services within that specific island.
+* **Category Aggregation:** Collects a distinct list of all categories present (e.g., "education, transport").
+* **Detailed Information String:** Uses `string_agg` to list every sub-type and facility name (e.g., `school: Grundschule Haidmühle | tram_station: Unknown`).
+* **Spatial Union:** Geometries are dissolved using `ST_UnaryUnion` with `ST_SnapToGrid` for clean multipolygons.
 
-All `.sh` files must use **Unix (LF) line endings**.  
-If the scripts are edited on Windows, tools like **Notepad++** can convert them:
 
-1. Open the `.sh` file in Notepad++.
-2. Go to `Edit` → `EOL Conversion` → `Unix (LF)`.
-3. Save the file.
-
-Failing to do this may cause syntax errors such as:
 
 ---
-## 3. Notes
-* The `overv/openstreetmap-tile-server` image already includes **Osmosis**, so no extra installation is needed.
-* `osm2pgsql_importer` only uses **osm2pgsql** and never touches Osmosis.
-* If you only want to import `.pbf` files and never apply incremental diffs, you can skip `osm_updater`.
-* Everything runs inside Docker containers—nothing is installed on your host system.
-* Make sure your Docker containers are running before connecting to any service.
-* Ports may differ if you modified `docker-compose.yml`.
-* Always shut down containers cleanly with:
 
-```bash
-docker compose down
+## 4. Performance & Setup
+
+### Optimization
+* **RAM Tuning:** `app.py` uses `work_mem = '1GB'` for large joins.
+* **Flex Schema:** Filters specific OSM tags via `styles/osm.lua` for Education, Leisure, Transport, and Landuse.
+* **Slim Mode:** `osm2pgsql` uses disk-based intermediate storage for large datasets.
+
+### Setup Instructions
+1. **Prerequisites:** Install Docker/Compose. Ensure all `.sh` files use **Unix (LF)** line endings.
+2. **Configuration:** Create a `.env` file with credentials matching `app.py`.
+3. **Deployment:**
+   ```bash
+   docker compose up -d
 
 

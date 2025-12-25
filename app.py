@@ -3,8 +3,8 @@ import time
 
 # Connection configuration
 conn_params = {
-    "host": "localhost",
-    "port": "5431",
+    "host": "postgis",
+    "port": "5432",
     "database": "gis",
     "user": "gis",
     "password": "password"

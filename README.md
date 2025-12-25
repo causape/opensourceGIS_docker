@@ -122,7 +122,7 @@ This repository contains a containerized GIS environment designed for automated 
 ### A. Initial Import Logic
 When the stack starts, `import_osm.sh` follows a priority-based bootstrap:
 * **Fast Import (SQL Dump):** If `/data/filtered_osm_data.sql.gz` exists, it restores the database directly for immediate deployment.
-### Standard Import (PBF)
+### B. Standard Import (PBF)
 If no dump is found, the system downloads the latest **Germany PBF** and executes `osm2pgsql` in **Flex Output** mode using the `styles/osm.lua` schema. 
 
 **How the Lua engine processes the Germany dataset:**
@@ -138,7 +138,7 @@ Instead of importing the entire OpenStreetMap database (which would be hundreds 
 
 
 
-### B. The Updater Loop (`osm_updater`)
+### C. The Updater Loop (`osm_updater`)
 This service runs a continuous 60-minute loop to keep data current:
 1. **Apply Diffs:** Scans `./data/diffs/` for `.osc.gz` files and applies them via `osm2pgsql --append` to update source tables.
 2. **Trigger `app.py`:** Executes the Python analysis engine to recalculate spatial buffers.

@@ -11,6 +11,12 @@ services:
       - "5431:5432"
     volumes:
       - ./data/postgis:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gis -d gis"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 
   geoserver:
     image: kartoza/geoserver:2.24.0
@@ -56,14 +62,19 @@ services:
     entrypoint: ["/bin/sh", "/usr/local/bin/import_osm.sh"]
 
   osm_updater:
-    image: overv/openstreetmap-tile-server:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.updater
     container_name: osm_updater
     restart: always
     depends_on:
-      - postgis
+      postgis:
+        condition: service_healthy
     env_file:
       - .env
     volumes:
       - ./data/diffs:/data/diffs
       - ./update_osm.sh:/usr/local/bin/update_osm.sh
+      - ./app.py:/usr/local/bin/app.py
     entrypoint: ["/bin/sh", "/usr/local/bin/update_osm.sh"]
+

@@ -21,29 +21,49 @@ def table_exists(cursor, table_name):
 
 def generate_base_buffers(cursor):
     """
-    Creates city_buffers if it doesn't exist. 
-    If it exists, it only inserts NEW elements from OSM tables.
-    Returns the count of new elements added.
+    Cleans duplicates, ensures UNIQUE constraint, and inserts new OSM data.
     """
     start_time = time.time()
     
-    # 1. Create the table with a UNIQUE constraint to allow incremental updates
+    # 1. Ensure table exists
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS city_buffers (
             id SERIAL PRIMARY KEY,
-            original_osm_id BIGINT UNIQUE, 
+            original_osm_id BIGINT,
             category TEXT,
             sub_type TEXT,
             name TEXT,
             geom GEOMETRY(MultiPolygon, 4326)
         );
-        CREATE INDEX IF NOT EXISTS idx_city_buffers_geom ON city_buffers USING GIST (geom);
     """)
 
-    print("Checking for new OSM features to process...")
+    # 2. CLEANUP: Delete duplicates keeping only the record with the lowest internal ID
+    print("Cleaning up existing duplicates to prepare for UNIQUE constraint...")
+    cursor.execute("""
+        DELETE FROM city_buffers a 
+        USING city_buffers b 
+        WHERE a.id > b.id 
+        AND a.original_osm_id = b.original_osm_id;
+    """)
 
-    # 2. Incremental Insert: Only rows where osm_id is NOT yet in city_buffers
-    # 'ON CONFLICT DO NOTHING' ensures we don't recalculate existing buffers
+    # 3. Apply the UNIQUE constraint (this will now succeed)
+    cursor.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'city_buffers_osm_id_unique'
+            ) THEN
+                ALTER TABLE city_buffers ADD CONSTRAINT city_buffers_osm_id_unique UNIQUE (original_osm_id);
+            END IF;
+        END $$;
+    """)
+
+    # 4. Ensure spatial index exists
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_city_buffers_geom ON city_buffers USING GIST (geom);")
+
+    print("Checking for new OSM features...")
+
+    # 5. Incremental Upsert
     insert_sql = """
     INSERT INTO city_buffers (original_osm_id, category, sub_type, name, geom)
     SELECT osm_id, category, sub_type, name, geom FROM (
@@ -66,10 +86,10 @@ def generate_base_buffers(cursor):
     ON CONFLICT (original_osm_id) DO NOTHING;
     """
     cursor.execute(insert_sql)
-    new_rows_count = cursor.rowcount
+    new_items = cursor.rowcount
     
-    print(f"Incremental Update: {new_rows_count} new elements buffered in {time.time() - start_time:.2f}s.")
-    return new_rows_count
+    print(f"Incremental Update: {new_items} new elements processed in {time.time() - start_time:.2f}s.")
+    return new_items > 0
 
 def generate_merged_buffers(cursor, force_update=False):
     """

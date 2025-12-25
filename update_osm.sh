@@ -9,7 +9,8 @@ done
 
 # Ensure the required directories exist
 mkdir -p /data/diffs/applied
-DUMP_FILE="/data/filtered_osm_data.sql.gz"
+
+DUMP_FILE="/data/osm/filtered_osm_data.sql.gz"
 
 while true; do
   # 1. Look for and apply new OSM diff files (.osc.gz)
@@ -44,27 +45,27 @@ while true; do
 
   # 2.5 Generate/Update the SQL Dump
   # Run if new data was applied OR if the dump file is missing
-  if [ ! -f "$DUMP_FILE" ]; then
-    echo "Changes detected or dump missing. Generating updated SQL Dump..."
+  
+  echo "Generating updated SQL Dump..."
     
-    # We include both the base OSM tables and your custom buffer tables
-    pg_dump -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" \
-      -t education_poi \
-      -t education_area \
-      -t leisure_poi \
-      -t leisure_area \
-      -t pedestrian_roads \
-      -t tram_stations \
-      -t landuse_areas \
-      -t city_buffers \
-      -t city_buffers_merged | gzip > "${DUMP_FILE}.tmp"
+  # We include both the base OSM tables and your custom buffer tables
+  pg_dump -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" \
+    -t education_poi \
+    -t education_area \
+    -t leisure_poi \
+    -t leisure_area \
+    -t pedestrian_roads \
+    -t tram_stations \
+    -t landuse_areas \
+    -t city_buffers \
+    -t city_buffers_merged | gzip > "${DUMP_FILE}.tmp"
     
-    # Safely replace the old dump with the new one
-    mv "${DUMP_FILE}.tmp" "$DUMP_FILE"
-    echo "SQL Dump updated successfully at $(date)."
-  fi
+  # Safely replace the old dump with the new one
+  mv "${DUMP_FILE}.tmp" "$DUMP_FILE"
+  echo "SQL Dump updated successfully at $(date)."
+  
 
   # 3. Wait for 1 hour before checking for new updates again
   echo "Sleeping 3600s (1h) before next check..."
-  sleep 3600
+  sleep 60
 done

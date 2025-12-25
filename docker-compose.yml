@@ -75,6 +75,7 @@ services:
     volumes:
       - ./data/diffs:/data/diffs
       - ./update_osm.sh:/usr/local/bin/update_osm.sh
+      - ./data/osm:/data/osm
       - ./app.py:/usr/local/bin/app.py
     entrypoint: ["/bin/sh", "/usr/local/bin/update_osm.sh"]
 

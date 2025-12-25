@@ -122,7 +122,19 @@ This repository contains a containerized GIS environment designed for automated 
 ### A. Initial Import Logic
 When the stack starts, `import_osm.sh` follows a priority-based bootstrap:
 * **Fast Import (SQL Dump):** If `/data/filtered_osm_data.sql.gz` exists, it restores the database directly for immediate deployment.
-* **Standard Import (PBF):** If no dump is found, it downloads the latest Germany PBF, cleans old tables, and runs `osm2pgsql` in **Flex Output** mode using the custom `styles/osm.lua` schema.
+### Standard Import (PBF)
+If no dump is found, the system downloads the latest **Germany PBF** and executes `osm2pgsql` in **Flex Output** mode using the `styles/osm.lua` schema. 
+
+**How the Lua engine processes the Germany dataset:**
+Instead of importing the entire OpenStreetMap database (which would be hundreds of gigabytes), the `osm.lua` script acts as a high-performance filter that scans every node and way to build a specialized schema:
+
+* **Rule-Based Filtering:** The engine inspects specific OSM tags (`amenity`, `leisure`, `highway`, `landuse`) to determine which features are relevant for urban analysis.
+* **Infrastructure Classification:**
+    * **Education:** Filters nodes and polygons tagged as `school`, `kindergarten`, `childcare`, or `social_facility`, splitting them into point (`education_poi`) and area (`education_area`) tables.
+    * **Leisure & Recreation:** Isolates `playground`, `pitch`, `sports_centre`, and `track` features into dedicated leisure tables.
+    * **Public Transport:** Specifically extracts `tram_station` nodes for transport accessibility analysis.
+    * **Connectivity:** Filters `highway=pedestrian` ways to identify walkable zones.
+* **On-the-fly Projection:** All geometries are automatically projected to **EPSG:3857** (Web Mercator) during the import process to ensure they are ready for high-speed spatial calculations in PostGIS.
 
 
 

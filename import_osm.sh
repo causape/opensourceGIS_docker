@@ -12,7 +12,6 @@ done
 OSM_URL="https://download.geofabrik.de/europe/germany-latest.osm.pbf"
 OSM_FILE="/data/germany-latest.osm.pbf"
 DUMP_FILE="/data/filtered_osm_data.sql.gz"
-
 # -----------------------------
 # 1. NEW: Check if SQL Dump exists (Highest Priority)
 # -----------------------------

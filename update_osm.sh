@@ -1,30 +1,30 @@
 #!/bin/sh
-# Apply OSM diffs using osm2pgsql Flex Mode
+set -e
 
+# Wait for the database to be ready before starting
 echo "Waiting for PostGIS..."
 until pg_isready -h "$PGHOST" -U "$PGUSER"; do
   sleep 2
 done
 
-# Ensure the directory for processed diffs exists
+# Ensure the required directories exist
 mkdir -p /data/diffs/applied
+DUMP_FILE="/data/filtered_osm_data.sql.gz"
 
 while true; do
-  # Check for compressed OSM change files (.osc.gz)
+  # 1. Look for and apply new OSM diff files (.osc.gz)
   for diff in /data/diffs/*.osc.gz; do
-    # If no files are found, skip to the next step
+    # Skip if no files are found
     [ -e "$diff" ] || continue
 
     echo "Applying update: $diff..."
     
-    # IMPORTANT: We use --append to update existing tables
-    # and point to your custom Flex style (.lua)
+    # Use --append to update existing data tables
     osm2pgsql \
       --append \
       --slim \
       --output=flex \
       --style /styles/osm.lua \
-      --flat-nodes /data/flatnodes.bin \
       --cache 12000 \
       -d "$PGDATABASE" \
       -U "$PGUSER" \
@@ -32,12 +32,39 @@ while true; do
       "$diff"
     
     echo "$diff applied successfully."
-
-    # Move the processed file to the "applied" folder to avoid re-processing
+    # Move processed file to 'applied' folder to prevent re-processing
     mv "$diff" /data/diffs/applied/
   done
 
-  # Wait for 1 hour before checking the directory again
-  echo "Sleeping 3600s (1h) before checking for new diffs..."
+  # 2 Recalculate buffers if OSM data changed-------------------
+  echo "OSM data updated. Recalculating city buffers..."
+  python3 /usr/local/bin/app.py
+  echo "Buffer recalculation finished."
+  
+
+  # 2.5 Generate/Update the SQL Dump
+  # Run if new data was applied OR if the dump file is missing
+  if [ ! -f "$DUMP_FILE" ]; then
+    echo "Changes detected or dump missing. Generating updated SQL Dump..."
+    
+    # We include both the base OSM tables and your custom buffer tables
+    pg_dump -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" \
+      -t education_poi \
+      -t education_area \
+      -t leisure_poi \
+      -t leisure_area \
+      -t pedestrian_roads \
+      -t tram_stations \
+      -t landuse_areas \
+      -t city_buffers \
+      -t city_buffers_merged | gzip > "${DUMP_FILE}.tmp"
+    
+    # Safely replace the old dump with the new one
+    mv "${DUMP_FILE}.tmp" "$DUMP_FILE"
+    echo "SQL Dump updated successfully at $(date)."
+  fi
+
+  # 3. Wait for 1 hour before checking for new updates again
+  echo "Sleeping 3600s (1h) before next check..."
   sleep 3600
 done

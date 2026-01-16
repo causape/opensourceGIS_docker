@@ -169,6 +169,38 @@ When buffers overlap, they dissolve into a single "Service Island" that absorbs 
 * **Spatial Union:** Geometries are dissolved using `ST_UnaryUnion` with `ST_SnapToGrid` for clean multipolygons.
 
 
+## 4. Geospatial Ops Dashboard
+To streamline operations and visualization, the project includes a custom Node.js Dashboard that unifies DevOps and GIS workflows in a single interface. This allows for real-time monitoring of the Docker stack while visually inspecting the generated "Service Islands."
+
+### Key Features
+Real-Time Docker Logs: Uses dockerode and socket.io to stream live logs from the postgis_db container (or others) directly to an embedded Xterm.js terminal in the browser. This eliminates the need to context-switch between CLI and map.
+
+### WMS/WFS Integration:
+
+* **Visualization:** Consumes WMS tiles from GeoServer (gis_project:city_buffers_merged) to render the analysis results over a MapLibre GL JS basemap.
+
+* **Interactivity:** Uses WFS GetFeature requests to query data attributes on click.
+
+* **Nominatim Search:** Integrated geocoding to quickly fly to specific cities or regions for inspection.
+
+* **Rich Data UI:** A custom card-based side panel parses the complex DETAILED_INFO strings, displaying amenities with automatic icon mapping (e.g., 🎓 for schools, 🧸 for kindergartens).
+
+Technical Highlight: Smart Feature Selection (QGIS-like Behavior)
+The raw data consists of "merged" buffers which often stack vertically (e.g., a specific playground buffer sitting physically on top of a larger neighborhood buffer). Standard WFS queries return all intersecting geometries at a point, often causing the application to display the largest, underlying shape instead of the specific detail the user clicked.
+
+To replicate the intuitive "Topmost Visible" selection behavior found in desktop GIS software like QGIS, the dashboard implements a client-side sorting algorithm using Turf.js:
+
+* **Spatial Filter:** It verifies which specific geometry (Polygon or MultiPolygon) strictly contains the click coordinates using turf.booleanPointInPolygon.
+
+* **Area Sort:* It calculates the geodesic area of all valid candidates (turf.area) and automatically selects the smallest feature.
+
+* **Visual Highlight:* The selected geometry is immediately highlighted in yellow to provide clear visual feedback of the "island" being inspected.
+
+This ensures that when a user clicks a small, specific detail (like a park), the application selects that specific element rather than the larger merged area underneath it, while maintaining the integrity of MultiPolygon structures.
+
+### Dashboard Setup
+The dashboard runs as a local Node.js service connecting to the Docker socket.
+
 
 ---
 

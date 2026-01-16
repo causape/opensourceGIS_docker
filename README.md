@@ -203,21 +203,21 @@ The dashboard runs as a local Node.js service connecting to the Docker socket.
 
 * **Navigate to the dashboard folder:**
 
-* **Bash**
+Bash
 ```
 cd Dashboard
 ```
-* **NInstall dependencies: This installs express (web server), socket.io (real-time logs), dockerode (Docker API), and cors.**
+Install dependencies: This installs express (web server), socket.io (real-time logs), dockerode (Docker API), and cors.
 
 
-* **Bash**
+Bash
 ```
 npm install
 ```
 Start the server:
 
 
-* **Bash**
+Bash
 ```
 node server.js
 ```

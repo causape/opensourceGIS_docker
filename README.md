@@ -176,35 +176,35 @@ To streamline operations and visualization, the project includes a custom Node.j
 ### 1. High-Performance Vector Rendering (MVT)
 Unlike traditional WMS (server-side raster rendering), this dashboard consumes Vector Tiles (MVT) directly from GeoServer via GeoWebCache (application/vnd.mapbox-vector-tile).
 
-* **Client-Side Rendering: Data is styled dynamically in the browser using MapLibre GL JS, allowing for smooth zooming and rotation without pixelation.**
+* **Client-Side Rendering:** Data is styled dynamically in the browser using MapLibre GL JS, allowing for smooth zooming and rotation without pixelation.
 
-* **Dynamic Styling: Colors and categorizations are applied in real-time based on the sub_type attribute (e.g., 🟧 Education, 🟩 Leisure, 🟦 Social), eliminating the need to regenerate server-side styles (SLD).**
+* **Dynamic Styling:**  Colors and categorizations are applied in real-time based on the sub_type attribute (e.g., 🟧 Education, 🟩 Leisure, 🟦 Social), eliminating the need to regenerate server-side styles (SLD).
 
 ### 2. Interactive Filtering & Analysis
-* **Real-time Filtering: Users can toggle specific amenity categories (e.g., "Show only Schools and Playgrounds") instantly without reloading data, using MapLibre's setFilter capabilities.**
+* **Real-time Filtering:** Users can toggle specific amenity categories (e.g., "Show only Schools and Playgrounds") instantly without reloading data, using MapLibre's setFilter capabilities.
 
-* **Smart Selection Logic (QGIS-like Behavior): To handle overlapping service areas, the application implements a custom sorting algorithm using Turf.js:**
-      * **1. Spatial Verification: Verifies strict containment using turf.booleanPointInPolygon.** 
-      * **2. Area Sorting: Calculates geodesic area (turf.area) and prioritizes the smallest feature first. This ensures that clicking on a small park inside a larger school zone selects the park preciseley, mimicking      desktop GIS UX.**
+* **Smart Selection Logic (QGIS-like Behavior):** To handle overlapping service areas, the application implements a custom sorting algorithm using Turf.js:
+      * **1. Spatial Verification:**  Verifies strict containment using turf.booleanPointInPolygon.
+      * **2. Area Sorting:** Calculates geodesic area (turf.area) and prioritizes the smallest feature first. This ensures that clicking on a small park inside a larger school zone selects the park preciseley, mimicking      desktop GIS UX.
 
 ### 3. Real-Time DevOps Monitoring
-* **Live Docker Logs: Integrates dockerode and socket.io to stream live logs from the PostGIS container directly to an embedded Xterm.js terminal in the browser. This allows for immediate verification of ETL processes and database triggers without context-switching.**
+* **Live Docker Logs:** Integrates dockerode and socket.io to stream live logs from the PostGIS container directly to an embedded Xterm.js terminal in the browser. This allows for immediate verification of ETL processes and database triggers without context-switching.
 
 ### 4. Rich User Interface
-* **WFS Data Retrieval: While visualization uses lightweight Vector Tiles, clicking a feature triggers a precise WFS GetFeature request to fetch comprehensive attribute data.**
+* **WFS Data Retrieval:** While visualization uses lightweight Vector Tiles, clicking a feature triggers a precise WFS GetFeature request to fetch comprehensive attribute data.
 
-* **Automated UI Parsing: A custom side panel parses complex PostgreSQL arrays (DETAILED_INFO), automatically mapping keywords to visual icons (e.g., 🎓 for schools, 🧸 for kindergartens) for rapid readability.**
+* **Automated UI Parsing:** A custom side panel parses complex PostgreSQL arrays (DETAILED_INFO), automatically mapping keywords to visual icons (e.g., 🎓 for schools, 🧸 for kindergartens) for rapid readability.
 
-* **Geocoding: Integrated Nominatim search for quick navigation to specific cities or neighborhoods.**
+* **Geocoding:** Integrated Nominatim search for quick navigation to specific cities or neighborhoods.
 
 ### 5. 🛠️ Tech Stack
-* **Frontend: HTML5, CSS3, MapLibre GL JS.**
+* **Frontend:** HTML5, CSS3, MapLibre GL JS.
 
-* **Backend: Node.js, Express, Socket.io, Dockerode.**
+* **Backend:** Node.js, Express, Socket.io, Dockerode.
 
-* **Geospatial Analysis: Turf.js (Client-side), PostGIS (Server-side).**
+* **Geospatial Analysis:** Turf.js (Client-side), PostGIS (Server-side).
 
-* **Protocols: MVT (Vector Tiles), WFS (Web Feature Service), WSS (WebSockets).**
+* **Protocols:** MVT (Vector Tiles), WFS (Web Feature Service), WSS (WebSockets).
 
 ### Dashboard Setup
 The dashboard runs as a local Node.js service connecting to the Docker socket.

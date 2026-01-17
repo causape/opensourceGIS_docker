@@ -1,0 +1,17 @@
+<layer>
+  <name>city_buffers_merged</name>
+  <id>LayerInfoImpl-30dfced6:19bc8cde227:-7ff2</id>
+  <type>VECTOR</type>
+  <defaultStyle>
+    <id>StyleInfoImpl-30dfced6:19bc8cde227:-7ffc</id>
+  </defaultStyle>
+  <resource class="featureType">
+    <id>FeatureTypeInfoImpl-30dfced6:19bc8cde227:-7ff3</id>
+  </resource>
+  <attribution>
+    <logoWidth>0</logoWidth>
+    <logoHeight>0</logoHeight>
+  </attribution>
+  <dateCreated>2026-01-16 22:04:44.984 UTC</dateCreated>
+  <dateModified>2026-01-17 11:01:47.761 UTC</dateModified>
+</layer>

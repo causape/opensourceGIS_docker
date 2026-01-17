@@ -1,4 +1,26 @@
 // =======================
+// 0. GLOBAL CONFIG & VARIABLES
+// =======================
+
+// Master list of subtypes (must match your database)
+const subTypes = [
+    "childcare",
+    "kindergarten",
+    "school",
+    "university",
+    "playground",
+    "pitch",
+    "sports_centre",
+    "track",
+    "social_facility",
+    "tram_station"
+];
+
+// Global filter state (all active at start)
+let selectedTypes = [...subTypes];
+
+
+// =======================
 // 1. TERMINAL CONFIGURATION
 // =======================
 const term = new Terminal({
@@ -15,6 +37,7 @@ const socket = io();
 socket.on('log', (data) => term.write(data));
 window.addEventListener('resize', () => fitAddon.fit());
 
+
 // =======================
 // 2. MAP CONFIGURATION
 // =======================
@@ -29,21 +52,70 @@ const map = new maplibregl.Map({
                 'tileSize': 256,
                 'attribution': '&copy; OpenStreetMap'
             },
-            'geoserver-wms': {
-                'type': 'raster',
+            // VECTOR SOURCE (LAYER MERGED BY SUBTYPE)
+            'geoserver-vector': {
+                'type': 'vector',
+                'scheme': 'tms',
                 'tiles': [
-                    'http://localhost:8080/geoserver/gis_project/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=gis_project:city_buffers_merged&WIDTH=256&HEIGHT=256&SRS=EPSG:3857&BBOX={bbox-epsg-3857}'
-                ],
-                'tileSize': 256
+                    // Ensure 'gis_project' is your workspace
+                    'http://localhost:8080/geoserver/gwc/service/tms/1.0.0/gis_project:city_buffers_subtype_merged@EPSG:900913@pbf/{z}/{x}/{y}.pbf'
+                ]
             }
         },
         'layers': [
             { 'id': 'osm-layer', 'type': 'raster', 'source': 'osm' },
-            { 'id': 'buffers-layer', 'type': 'raster', 'source': 'geoserver-wms', 'paint': { 'raster-opacity': 0.7 } }
+            
+            // --- FILL LAYER (Colors by category) ---
+            { 
+                'id': 'buffers-fill', 
+                'type': 'fill', 
+                'source': 'geoserver-vector', 
+                // Internal layer name (without workspace if GeoServer removes it)
+                'source-layer': 'city_buffers_subtype_merged', 
+                'paint': { 
+                    'fill-color': [
+                        'match',
+                        ['downcase', ['get', 'sub_type']], // Normalize to lowercase
+                        
+                        // --- EDUCATION ---
+                        'school', '#ff9900',
+                        'kindergarten', '#ffcc00',
+                        'childcare', '#ffb366',
+                        'university', '#cc6600',
+
+                        // --- SPORTS ---
+                        'playground', '#33cc33',
+                        'pitch', '#008800',
+                        'sports_centre', '#009999',
+                        'track', '#cc5500',
+
+                        // --- OTHERS ---
+                        'social_facility', '#3399ff',
+                        'tram_station', '#cc0000',
+
+                        // --- FALLBACK ---
+                        '#888888'
+                    ],
+                    'fill-opacity': 0.6,
+                    'fill-outline-color': '#ffffff'
+                } 
+            },
+            // --- BORDER LAYER ---
+            {
+                'id': 'buffers-line',
+                'type': 'line',
+                'source': 'geoserver-vector',
+                'source-layer': 'city_buffers_subtype_merged',
+                'paint': {
+                    'line-color': '#ffffff',
+                    'line-width': 1.5,
+                    'line-opacity': 0.7
+                }
+            }
         ]
     },
-    center: [10.45, 51.16], 
-    zoom: 5
+    center: [8.4037, 49.0069], 
+    zoom: 12
 });
 
 map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
@@ -64,10 +136,10 @@ async function searchLocation() {
     } catch (err) { console.error(err); }
 }
 
+
 // =======================
 // 4. HIGHLIGHT FUNCTIONS
 // =======================
-
 function highlightFeature(geojsonFeature) {
     const sourceId = 'highlight-source';
     const layerFillId = 'highlight-layer-fill';
@@ -76,29 +148,16 @@ function highlightFeature(geojsonFeature) {
     if (map.getSource(sourceId)) {
         map.getSource(sourceId).setData(geojsonFeature);
     } else {
-        map.addSource(sourceId, {
-            'type': 'geojson',
-            'data': geojsonFeature
+        map.addSource(sourceId, { 'type': 'geojson', 'data': geojsonFeature });
+
+        map.addLayer({
+            'id': layerFillId, 'type': 'fill', 'source': sourceId,
+            'paint': { 'fill-color': '#ffff00', 'fill-opacity': 0.4 }
         });
 
         map.addLayer({
-            'id': layerFillId,
-            'type': 'fill',
-            'source': sourceId,
-            'paint': {
-                'fill-color': '#ffff00',
-                'fill-opacity': 0.4
-            }
-        });
-
-        map.addLayer({
-            'id': layerLineId,
-            'type': 'line',
-            'source': sourceId,
-            'paint': {
-                'line-color': '#ffff00',
-                'line-width': 3
-            }
+            'id': layerLineId, 'type': 'line', 'source': sourceId,
+            'paint': { 'line-color': '#ffff00', 'line-width': 3 }
         });
     }
 }
@@ -106,25 +165,24 @@ function highlightFeature(geojsonFeature) {
 function clearHighlight() {
     const sourceId = 'highlight-source';
     if (map.getSource(sourceId)) {
-        map.getSource(sourceId).setData({
-            type: 'FeatureCollection',
-            features: []
-        });
+        map.getSource(sourceId).setData({ type: 'FeatureCollection', features: [] });
     }
 }
 
+
 // =======================
-// 5. CLICK LOGIC (MULTIPOLYGON AWARE)
+// 5. CLICK LOGIC (WFS + VISIBILITY CHECK)
 // =======================
 map.on('click', async (e) => {
     const { lng, lat } = e.lngLat;
     const clickPoint = turf.point([lng, lat]);
     
+    // WFS query to the merged layer
     const wfsUrl = new URL('http://localhost:8080/geoserver/gis_project/ows');
     wfsUrl.searchParams.append('service', 'WFS');
     wfsUrl.searchParams.append('version', '1.0.0');
     wfsUrl.searchParams.append('request', 'GetFeature');
-    wfsUrl.searchParams.append('typeName', 'gis_project:city_buffers_merged');
+    wfsUrl.searchParams.append('typeName', 'gis_project:city_buffers_subtype_merged'); 
     wfsUrl.searchParams.append('maxFeatures', '10'); 
     wfsUrl.searchParams.append('outputFormat', 'application/json');
     wfsUrl.searchParams.append('CQL_FILTER', `INTERSECTS(geom, POINT(${lng} ${lat}))`);
@@ -135,28 +193,29 @@ map.on('click', async (e) => {
 
         if (data.features && data.features.length > 0) {
             
-            // --- CAMBIO AQUÍ: NO APLANAMOS (NO FLATTEN) ---
-            // Trabajamos directamente con los features tal cual vienen (MultiPolygon o Polygon)
-            
-            // 1. Filtrar: ¿En qué polígonos cae realmente el punto?
-            // turf.booleanPointInPolygon funciona tanto con Polygon como con MultiPolygon
+            // --- SMART FILTERING ---
             const validFeatures = data.features.filter(feature => {
-                return turf.booleanPointInPolygon(clickPoint, feature);
+                // 1. Does the point geometrically fall inside?
+                const isInside = turf.booleanPointInPolygon(clickPoint, feature);
+                
+                // 2. Is the type active in the filter menu?
+                // Use toLowerCase() to avoid case sensitivity issues
+                const type = feature.properties.sub_type ? feature.properties.sub_type.toLowerCase() : '';
+                const isVisible = selectedTypes.includes(type);
+
+                return isInside && isVisible;
             });
 
             if (validFeatures.length > 0) {
-                // 2. Ordenar por área total (El más pequeño primero)
-                // Esto ayuda si tienes un buffer pequeño encima de uno grande
+                // Sort by area (smallest first to facilitate selection)
                 const sorted = validFeatures.sort((a, b) => turf.area(a) - turf.area(b));
-                
                 const selectedFeature = sorted[0];
 
-                // 3. Highlight & Show Info (Se iluminará TODO el multipolígono)
                 highlightFeature(selectedFeature);
                 showPanel(selectedFeature.properties);
             } else {
-                // Fallback (por si el click fue en el borde exacto)
-                showPanel(data.features[0].properties);
+                // If nothing visible under click, close
+                closePanel();
             }
         } else {
             closePanel();
@@ -166,19 +225,22 @@ map.on('click', async (e) => {
     }
 });
 
-// =======================
-// 6. LIST FORMATTER & UI
-// =======================
 
+// =======================
+// 6. UI & FORMATTING
+// =======================
 const typeConfig = {
-    'kindergarten': { icon: '🧸', class: 'type-kindergarten' },
-    'school':       { icon: '🎓', class: 'type-school' },
-    'playground':   { icon: '🛝', class: 'type-playground' },
-    'pitch':        { icon: '⚽', class: 'type-playground' },
+    'school':          { icon: '🎓', class: 'type-school' },
+    'kindergarten':    { icon: '🧸', class: 'type-kindergarten' },
+    'childcare':       { icon: '👶', class: 'type-kindergarten' },
+    'university':      { icon: '🏛️', class: 'type-school' },
+    'playground':      { icon: '🛝', class: 'type-playground' },
+    'pitch':           { icon: '⚽', class: 'type-playground' },
+    'sports_centre':   { icon: '🏋️', class: 'type-playground' },
+    'track':           { icon: '🏃', class: 'type-playground' },
     'social_facility': { icon: '🤝', class: 'type-social' },
-    'university':   { icon: '🏛️', class: 'type-school' },
-    'sports_centre':{ icon: '🏋️', class: 'type-playground' },
-    'default':      { icon: '📍', class: '' } 
+    'tram_station':    { icon: '🚋', class: 'type-social' }, 
+    'default':         { icon: '📍', class: '' } 
 };
 
 function formatDetailedInfo(text) {
@@ -208,13 +270,7 @@ function formatDetailedInfo(text) {
                 </li>
             `;
         } else {
-            html += `
-                <li>
-                    <div class="card-icon">📍</div>
-                    <div class="card-content">
-                        <span class="card-name">${item}</span>
-                    </div>
-                </li>`;
+            html += `<li><div class="card-content"><span class="card-name">${item}</span></div></li>`;
         }
     });
     html += '</ul>';
@@ -238,7 +294,8 @@ function showPanel(properties) {
     }
 
     for (const [key, value] of Object.entries(properties)) {
-        if (key !== 'bbox' && key !== 'geom' && key.toLowerCase() !== 'detailed_info' && key.toLowerCase() !== 'sub_types') {
+        // Hide technical columns
+        if (!['bbox', 'geom', 'detailed_info', 'sub_types', 'names_list'].includes(key.toLowerCase())) {
             html += `
                 <div class="info-section">
                     <span class="label">${key.replace(/_/g, ' ')}</span>
@@ -255,3 +312,52 @@ function closePanel() {
     document.getElementById('infoPanel').classList.remove('active');
     clearHighlight(); 
 }
+
+
+// =======================
+// 7. FILTER CONTROL LOGIC
+// =======================
+function initFilterControl() {
+    const filterGroup = document.getElementById('filter-control');
+    
+    // Function to visually update the map
+    const updateMapFilter = () => {
+        // MapLibre syntax: ['in', 'field', val1, val2...]
+        const filter = ['in', 'sub_type', ...selectedTypes];
+        
+        if (map.getLayer('buffers-fill')) map.setFilter('buffers-fill', filter);
+        if (map.getLayer('buffers-line')) map.setFilter('buffers-line', filter);
+    };
+
+    // Generate checkboxes
+    subTypes.forEach(type => {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = true; // All active by default
+        input.value = type;
+        
+        input.addEventListener('change', (e) => {
+            const value = e.target.value;
+            if (e.target.checked) {
+                // Add to global list
+                if (!selectedTypes.includes(value)) selectedTypes.push(value);
+            } else {
+                // Remove from global list
+                selectedTypes = selectedTypes.filter(item => item !== value);
+            }
+            // Update map
+            updateMapFilter();
+        });
+
+        const text = document.createTextNode(` ${type.replace(/_/g, ' ')}`);
+        label.appendChild(input);
+        label.appendChild(text);
+        filterGroup.appendChild(label);
+    });
+}
+
+// Initialize filters when the map is ready
+map.on('load', () => {
+    initFilterControl();
+});

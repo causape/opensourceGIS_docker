@@ -109,3 +109,38 @@ li.type-school { border-left-color: #4caf50; }       /* Green */
 li.type-kindergarten { border-left-color: #ff9800; } /* Orange */
 li.type-playground { border-left-color: #2196f3; }   /* Blue */
 li.type-social { border-left-color: #e91e63; }       /* Pink */
+
+.filter-group {
+    font: 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+    font-weight: 600;
+    position: absolute;
+    top: 80px; 
+    left: 10px;
+    z-index: 1;
+    border-radius: 3px;
+    width: 150px;
+    color: #fff;
+    background-color: rgba(0, 0, 0, 0.8);
+    padding: 10px;
+}
+
+.filter-group h4 {
+    margin: 0 0 10px;
+    border-bottom: 1px solid #555;
+    padding-bottom: 5px;
+}
+
+.filter-group input[type='checkbox'] {
+    margin-right: 5px;
+    cursor: pointer;
+}
+
+.filter-group label {
+    display: block; 
+    cursor: pointer;
+    padding: 2px 0;
+}
+
+.filter-group label:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}

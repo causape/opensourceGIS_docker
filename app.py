@@ -91,6 +91,7 @@ def generate_base_buffers(cursor):
     print(f"Incremental Update: {new_items} new elements processed in {time.time() - start_time:.2f}s.")
     return new_items > 0
 
+'''
 def generate_merged_buffers(cursor, force_update=False):
     """
     Recalculates service islands (merged table).
@@ -142,6 +143,73 @@ def generate_merged_buffers(cursor, force_update=False):
     
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_merged_geom ON city_buffers_merged USING GIST (geom);")
     print(f"Success: Merged table updated in {time.time() - start_time:.2f}s.")
+'''
+
+import time
+
+def generate_merged_buffers_by_subtype(cursor, force_update=False):
+    """
+    Recalcula las islas de servicio pero MANTENIENDO la distinción por sub_type.
+    Si dos buffers se tocan pero son de distinto tipo, NO se fusionan.
+    Si dos buffers del mismo tipo se tocan, SÍ se fusionan.
+    """
+    table_name = 'city_buffers_subtype_merged'
+    
+    # Comprobación básica de existencia (asumiendo que tienes la función table_exists)
+    # Si no la tienes, puedes comentar estas 3 líneas siguientes.
+    exists = table_exists(cursor, table_name)
+    if not force_update and exists:
+        print(f"INFO: No changes detected for {table_name}. Skipping update.")
+        return
+
+    start_time = time.time()
+    print(f"Refreshing merged islands by SUBTYPE ({table_name})...")
+
+    # Aumentamos memoria temporal para la operación geométrica
+    cursor.execute("SET work_mem = '512MB';")
+
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
+    
+    # Query optimizada usando ST_ClusterDBSCAN
+    # eps := 0 significa que deben tocarse o solaparse para considerarse el mismo cluster
+    cursor.execute(f"""
+        CREATE TABLE {table_name} AS
+        WITH clustered AS (
+            SELECT 
+                id,
+                category,
+                sub_type,
+                name,
+                geom,
+                -- Agrupa geometrías que se tocan (eps=0), pero SOLO entre el mismo sub_type
+                ST_ClusterDBSCAN(geom, eps := 0, minpoints := 1) 
+                OVER (PARTITION BY sub_type) AS cid
+            FROM city_buffers
+        )
+        SELECT 
+            row_number() OVER () AS id,  -- Generamos un nuevo ID único
+            sub_type,
+            MAX(category) as category,   -- La categoría es la misma para el grupo
+            
+            -- Generamos la lista detallada para tu panel lateral
+            string_agg(DISTINCT sub_type || ': ' || COALESCE(name, 'Unknown'), ' | ') as detailed_info,
+            
+            COUNT(*) as element_count,
+            
+            -- Fusionamos la geometría y forzamos el SRID 4326
+            ST_Multi(ST_Union(geom))::geometry(MultiPolygon, 4326) as geom
+        FROM clustered
+        GROUP BY sub_type, cid;
+    """)
+    
+    # Índice espacial vital para que las Vector Tiles vayan rápido
+    cursor.execute(f"CREATE INDEX idx_{table_name}_geom ON {table_name} USING GIST (geom);")
+    
+    # Índice para búsquedas rápidas por subtipo
+    cursor.execute(f"CREATE INDEX idx_{table_name}_subtype ON {table_name} (sub_type);")
+
+    print(f"Success: Table '{table_name}' updated in {time.time() - start_time:.2f}s.")
+
 
 def main():
     """Main incremental execution entry point."""
@@ -155,7 +223,8 @@ def main():
         conn.commit()
 
         # Step 2: Refresh merge ONLY if there is new data
-        generate_merged_buffers(cursor, force_update=(new_items_added > 0))
+        #generate_merged_buffers(cursor, force_update=(new_items_added > 0))
+        generate_merged_buffers_by_subtype(cursor, force_update=(new_items_added > 0))
         conn.commit()
 
     except Exception as e:

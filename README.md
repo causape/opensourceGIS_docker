@@ -233,6 +233,28 @@ Access the Interface: Open your browser and navigate to: http://localhost:3000
 
 ---
 
+## Key Extra Functionalities
+
+Beyond standard mapping, this application implements advanced logic to ensure strict compliance with the complexities of the German Cannabis Act (CanG), specifically regarding time-dependent restrictions.
+
+### Dynamic Time-Fencing (Pedestrian Zones)
+Unlike schools or playgrounds (which are restricted 24/7), Pedestrian Zones (Fußgängerzonen) have a unique legal status: cannabis consumption is only prohibited between 07:00 and 20:00.
+* **Automatic Layer Control:** A global clock monitors the system time every second.
+*  Day Mode (07:00 - 20:00): The system activates the Magenta layer for pedestrian zones, marking them as restricted areas.
+*  Night Mode (20:00 - 07:00): The system automatically filters out and hides the pedestrian layer from the map, visually indicating that the restriction is lifted.
+* **Simulation Mode:** A developer tool (Time Slider) allows users to manually shift the "App Time" to test the map's behavior and layer transitions between day and night without waiting for real-time changes.
+
+### Smart Geofencing & Real-Time Alerts
+The app uses the HTML5 Geolocation API combined with WFS (Web Feature Service) queries to protect the user in real-time. The logic goes beyond simple intersection checks; it implements a Decision Tree Algorithm to determine the safety status:
+* **GPS Tracking:** The app watches the user's coordinate
+* ``` navigator.geolocation.watchPosition ``` 
+* **Spatial Query:** It queries GeoServer to see if the user's location intersects with any buffered polygon.
+* **Context-Aware Status:**
+* Scenario A (Fixed Restriction): If the user is inside a School or Playground buffer → 🔴 NO SMOKING (Always Prohibited)
+* Scenario B (Conditional Restriction): If the user is inside a Pedestrian Zone:Is it Daytime? → 🔴 NO SMOKING (Restricted).
+
+Is it Nighttime? → 🟢 SMOKING PERMITTED (The app ignores the polygon intersection based on the current time).
+ 
 ## 4. Performance & Setup
 
 ### Optimization

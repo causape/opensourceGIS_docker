@@ -27,6 +27,14 @@
                 <input type="text" id="citySearch" placeholder="Search city..." onkeypress="handleEnter(event)">
                 <button class="search-btn" onclick="searchLocation()">🔍</button>
             </div>
+            <div id="clock-panel" class="clock-panel">
+                <span id="time-display">00:00:00</span>
+                <span id="time-status" class="time-status">Checking...</span>
+            </div>
+            <div id="status-panel" class="status-panel waiting">
+                <span id="status-icon">🔄</span>
+                <span id="status-text">Locating...</span>
+            </div>
 
             <div id="infoPanel" class="info-panel">
                 <div class="info-header">
@@ -42,7 +50,7 @@
             </div>
         </div>
     </div>
-
+    
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>

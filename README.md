@@ -247,13 +247,13 @@ Unlike schools or playgrounds (which are restricted 24/7), Pedestrian Zones (Fu�
 ### Smart Geofencing & Real-Time Alerts
 The app uses the HTML5 Geolocation API combined with WFS (Web Feature Service) queries to protect the user in real-time. The logic goes beyond simple intersection checks; it implements a Decision Tree Algorithm to determine the safety status:
 * **GPS Tracking:** The app watches the user's coordinate
-* ``` navigator.geolocation.watchPosition ``` 
+    * **``` navigator.geolocation.watchPosition ```**
 * **Spatial Query:** It queries GeoServer to see if the user's location intersects with any buffered polygon.
 * **Context-Aware Status:**
-* Scenario A (Fixed Restriction): If the user is inside a School or Playground buffer → 🔴 NO SMOKING (Always Prohibited)
-* Scenario B (Conditional Restriction): If the user is inside a Pedestrian Zone:Is it Daytime? → 🔴 NO SMOKING (Restricted).
-
-Is it Nighttime? → 🟢 SMOKING PERMITTED (The app ignores the polygon intersection based on the current time).
+    * **Scenario A (Fixed Restriction):** If the user is inside a School or Playground buffer → 🔴 NO SMOKING (Always Prohibited)
+    * **Scenario B (Conditional Restriction):**
+          * If the user is inside a Pedestrian Zone:Is it Daytime? → 🔴 NO SMOKING (Restricted).
+          * Is it Nighttime? → 🟢 SMOKING PERMITTED (The app ignores the polygon intersection based on the current time).
  
 ## 4. Performance & Setup
 

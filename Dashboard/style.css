@@ -144,3 +144,66 @@ li.type-social { border-left-color: #e91e63; }       /* Pink */
 .filter-group label:hover {
     background-color: rgba(255, 255, 255, 0.1);
 }
+
+.status-panel {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    padding: 15px 25px;
+    border-radius: 30px;
+    background: rgba(0, 0, 0, 0.85);
+    color: white;
+    font-family: 'Consolas', sans-serif; /* Matches your terminal theme */
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    transition: all 0.3s ease;
+}
+
+/* State: No Smoking (Inside buffer) */
+.status-panel.warning {
+    background-color: #cc0000; /* Red */
+    border: 2px solid #ff6666;
+}
+
+/* State: Allowed (Outside buffer) */
+.status-panel.safe {
+    background-color: #28a745; /* Green */
+    border: 2px solid #66ff99;
+}
+
+/* State: Waiting/Error */
+.status-panel.waiting {
+    background-color: #333;
+    border: 2px solid #555;
+}
+
+.clock-panel {
+    position: absolute;
+    top: 20px;
+    right: 60px; /* A la derecha, al lado de los filtros */
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.85);
+    color: #00ff00; /* Estilo terminal */
+    padding: 10px 15px;
+    border-radius: 8px;
+    font-family: 'Consolas', monospace;
+    border: 1px solid #333;
+    text-align: right;
+}
+
+.clock-panel #time-display {
+    font-size: 1.5rem;
+    font-weight: bold;
+    display: block;
+}
+
+.clock-panel .time-status {
+    font-size: 0.75rem;
+    color: #aaa;
+    text-transform: uppercase;
+}

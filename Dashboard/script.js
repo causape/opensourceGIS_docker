@@ -13,7 +13,8 @@ const subTypes = [
     "sports_centre",
     "track",
     "social_facility",
-    "tram_station"
+    "tram_station",
+    "pedestrian_zone"
 ];
 
 // Global filter state (all active at start)
@@ -60,6 +61,15 @@ const map = new maplibregl.Map({
                     // Ensure 'gis_project' is your workspace
                     'http://localhost:8080/geoserver/gwc/service/tms/1.0.0/gis_project:city_buffers_subtype_merged@EPSG:900913@pbf/{z}/{x}/{y}.pbf'
                 ]
+            },
+
+            'pedestrian-source': {
+                'type': 'vector',
+                'scheme': 'tms',
+                'tiles': [
+                    // Apuntamos a la capa 'pedestrian_buffer' que mostraste en la imagen
+                    'http://localhost:8080/geoserver/gwc/service/tms/1.0.0/gis_project:pedestrian_buffer@EPSG:900913@pbf/{z}/{x}/{y}.pbf?v='
+                ]
             }
         },
         'layers': [
@@ -92,6 +102,7 @@ const map = new maplibregl.Map({
                         // --- OTHERS ---
                         'social_facility', '#3399ff',
                         'tram_station', '#cc0000',
+                        
 
                         // --- FALLBACK ---
                         '#888888'
@@ -99,6 +110,17 @@ const map = new maplibregl.Map({
                     'fill-opacity': 0.6,
                     'fill-outline-color': '#ffffff'
                 } 
+            },
+            {
+                'id': 'pedestrian-fill',
+                'type': 'fill',
+                'source': 'pedestrian-source',
+                'source-layer': 'pedestrian_buffer', 
+                'paint': {
+                    'fill-color': '#ff00ff', // MAGENTA
+                    'fill-opacity': 0.6,
+                    'fill-outline-color': '#ffffff'
+                }
             },
             // --- BORDER LAYER ---
             {
@@ -239,7 +261,8 @@ const typeConfig = {
     'sports_centre':   { icon: '🏋️', class: 'type-playground' },
     'track':           { icon: '🏃', class: 'type-playground' },
     'social_facility': { icon: '🤝', class: 'type-social' },
-    'tram_station':    { icon: '🚋', class: 'type-social' }, 
+    'tram_station':    { icon: '🚋', class: 'type-social' },
+    'pedestrian_zone': { icon: '🚶', class: 'type-social' },
     'default':         { icon: '📍', class: '' } 
 };
 
@@ -327,6 +350,8 @@ function initFilterControl() {
         
         if (map.getLayer('buffers-fill')) map.setFilter('buffers-fill', filter);
         if (map.getLayer('buffers-line')) map.setFilter('buffers-line', filter);
+        if (map.getLayer('pedestrian-fill')) map.setFilter('pedestrian-fill', filter);
+        
     };
 
     // Generate checkboxes
@@ -356,6 +381,235 @@ function initFilterControl() {
         filterGroup.appendChild(label);
     });
 }
+
+
+// =======================
+// 8. REAL-TIME GEOLOCATION & SMOKING CHECK  / ////EXTRA FUNCTIONANILTY IN THE APP.  
+// =======================
+
+let userPosition = null;
+const userMarker = new maplibregl.Marker({ color: '#007cbf', scale: 1.2 }); // Blue dot for user
+
+// 8.1. Start location tracking
+if ('geolocation' in navigator) {
+    navigator.geolocation.watchPosition(
+        (position) => {
+            const { longitude, latitude } = position.coords;
+            userPosition = [longitude, latitude];
+
+            // Update marker on map in real-time
+            userMarker.setLngLat(userPosition).addTo(map);
+            /*
+            userPosition = [8.404854, 49.014147];
+
+            // Update marker on map in real-time
+            //userMarker.setLngLat(userPosition).addTo(map);
+            userMarker.setLngLat(userPosition).addTo(map);
+            
+            // Fly directly to the map
+            map.flyTo({ center: userPosition, zoom: 16 });
+
+            */
+        },
+        (error) => {
+            console.error("Error getting location:", error);
+            updateStatusUI('error');
+        },
+        {
+            enableHighAccuracy: true, // Use GPS if available
+            maximumAge: 0,
+            timeout: 5000
+        }
+    );
+} else {
+    console.error("Geolocation is not supported by this browser.");
+}
+
+// 8.2. Check Logic (Queries GeoServer)
+async function checkSmokingStatus() {
+    if (!userPosition) return;
+    const [lng, lat] = userPosition;
+    const currentHour = new Date().getHours(); // System time
+
+    // WFS URL (Standard setup)
+    const wfsUrl = new URL('http://localhost:8080/geoserver/gis_project/ows');
+    wfsUrl.searchParams.append('service', 'WFS');
+    wfsUrl.searchParams.append('version', '1.0.0');
+    wfsUrl.searchParams.append('request', 'GetFeature');
+    wfsUrl.searchParams.append('typeName', 'gis_project:city_buffers_subtype_merged');
+    wfsUrl.searchParams.append('outputFormat', 'application/json');
+    wfsUrl.searchParams.append('CQL_FILTER', `INTERSECTS(geom, POINT(${lng} ${lat}))`);
+
+    try {
+        const res = await fetch(wfsUrl);
+        const data = await res.json();
+
+        if (data.features && data.features.length > 0) {
+            let isRestricted = false;
+
+            for (const feature of data.features) {
+                const type = feature.properties.sub_type ? feature.properties.sub_type.toLowerCase() : '';
+
+                // --- TIME LOGIC ---
+                if (type === 'pedestrian_zone') {
+                    // Only restricted between 07:00 and 20:00
+                    if (currentHour >= 7 && currentHour < 20) {
+                        isRestricted = true; // Day = Restricted
+                        break;
+                    } else {
+                        // Night = Safe (Ignore this zone)
+                        console.log("Inside Pedestrian Zone, but it's night time. Safe.");
+                        continue; 
+                    }
+                } else {
+                    // Schools, playgrounds, etc. are ALWAYS restricted (24/7)
+                    isRestricted = true;
+                    break;
+                }
+            }
+
+            if (isRestricted) {
+                updateStatusUI('warning');
+            } else {
+                // Inside a polygon, but it's a "Safe" time (Night pedestrian zone)
+                updateStatusUI('safe'); 
+            }
+
+        } else {
+            // Outside of any buffer
+            updateStatusUI('safe');
+        }
+    } catch (err) { 
+        console.error("Error checking zone:", err); 
+        updateStatusUI('error');
+    }
+}
+
+// 8.3. Run check every 30 seconds
+setInterval(checkSmokingStatus, 30000); 
+
+// Optional: Run immediately once to avoid waiting 30s for the first status
+setTimeout(() => {
+    if(userPosition) checkSmokingStatus();
+}, 3000);
+
+
+// =======================
+// 8.4. UI HELPER FUNCTION
+// =======================
+function updateStatusUI(status) {
+    const panel = document.getElementById('status-panel');
+    const text = document.getElementById('status-text');
+    const icon = document.getElementById('status-icon');
+
+    // Remove previous classes
+    panel.classList.remove('waiting', 'warning', 'safe');
+
+    if (status === 'warning') {
+        panel.classList.add('warning');
+        icon.innerText = '🚭';
+        text.innerText = 'NO SMOKING (Protected Zone)';
+    } else if (status === 'safe') {
+        panel.classList.add('safe');
+        icon.innerText = '✅';
+        text.innerText = 'Smoking Permitted Here';
+    } else {
+        panel.classList.add('waiting');
+        icon.innerText = '⚠️';
+        text.innerText = 'Searching GPS...';
+    }
+}
+
+// =======================
+// 9. TIME LOGIC (CLOCK & LAYER CONTROL)
+// =======================
+
+function initClock() {
+    const timeDisplay = document.getElementById('time-display');
+    const statusDisplay = document.getElementById('time-status');
+    const pedType = 'pedestrian_zone';
+    
+    // HELPER: Refreshes the map filters based on the 'selectedTypes' list
+    const refreshMapLayers = () => {
+        // Create the filter syntax for MapLibre
+        const filter = ['in', 'sub_type', ...selectedTypes];
+        
+        // 1. Update the main merged layer (if it exists)
+        if (map.getLayer('buffers-fill')) map.setFilter('buffers-fill', filter);
+        if (map.getLayer('buffers-line')) map.setFilter('buffers-line', filter);
+        
+        // 2. CRITICAL: Update the separate pedestrian layer (if you added it separately)
+        if (map.getLayer('pedestrian-fill')) map.setFilter('pedestrian-fill', filter);
+    };
+
+    setInterval(() => {
+        const now = new Date();
+        const hours = now.getHours(); // We define 'hours' here
+        const timeString = now.toLocaleTimeString(); 
+
+        // 1. Update Visual Clock
+        if(timeDisplay) timeDisplay.innerText = timeString;
+
+        // 2. CHECK RESTRICTION (07:00 - 20:00)
+        // FIX: Use the variable 'hours', not 'currentHour'
+        const isRestrictedTime = hours >= 7 && hours < 20;
+
+        // Update Text Status
+        if(statusDisplay) {
+            statusDisplay.innerText = isRestrictedTime ? "⚠ RESTRICTIONS ACTIVE" : "🌙 NIGHT MODE (RELAXED)";
+            statusDisplay.style.color = isRestrictedTime ? "#ff9900" : "#00ccff";
+        }
+
+        // 3. AUTOMATIC LAYER CONTROL
+        const checkbox = document.querySelector(`input[value="${pedType}"]`);
+        
+        if (isRestrictedTime) {
+            // --- DAYTIME (RESTRICTED) ---
+            if (checkbox) {
+                if (checkbox.disabled) {
+                    // Re-enable the interaction
+                    checkbox.disabled = false;
+                    checkbox.parentElement.style.opacity = "1";
+                    checkbox.parentElement.title = "Active Restriction Zone";
+                    
+                    // If not currently selected, auto-select it when the day starts
+                    if (!selectedTypes.includes(pedType)) {
+                         selectedTypes.push(pedType);
+                         checkbox.checked = true;
+                         refreshMapLayers(); // Apply changes to the map
+                    }
+                }
+            }
+
+        } else {
+            // --- NIGHTTIME (SAFE/CHILL) ---
+            
+            // 1. If the layer is currently active, remove it
+            if (selectedTypes.includes(pedType)) {
+                // Filter the array to remove 'pedestrian_zone'
+                selectedTypes = selectedTypes.filter(t => t !== pedType);
+                
+                // Visually uncheck the box
+                if (checkbox) checkbox.checked = false;
+                
+                // Update the map (This is where the magenta layer disappears)
+                refreshMapLayers(); 
+            }
+
+            // 2. Disable the checkbox so it cannot be enabled by mistake
+            if (checkbox) {
+                checkbox.disabled = true; 
+                checkbox.parentElement.style.opacity = "0.5"; 
+                checkbox.parentElement.title = "Restriction inactive at night (20:00 - 07:00)";
+            }
+        }
+
+    }, 1000); // Run every second
+}
+
+// Start clock
+initClock();
+
 
 // Initialize filters when the map is ready
 map.on('load', () => {

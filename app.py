@@ -212,48 +212,64 @@ def generate_merged_buffers_by_subtype(cursor, force_update=False):
 
 def generate_pedestrian_buffers(cursor):
     """
-    Creates an EXCLUSIVE table 'pedestrian_buffer' and populates it 
-    with 5m buffers from 'pedestrian_roads'.
+    Creates an EXCLUSIVE table 'pedestrian_buffer' and populates it
+    with 5-meter buffers generated from the 'pedestrian_roads' table.
     """
     start_time = time.time()
     print("--- Generating Exclusive Pedestrian Buffers (5m) ---")
 
-    # 1. Create the exclusive table
+    # 1. Create the exclusive output table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS pedestrian_buffer (
             id SERIAL PRIMARY KEY,
             osm_id BIGINT UNIQUE,
             name TEXT,
-            sub_type TEXT DEFAULT 'pedestrian_zone', 
+            sub_type TEXT DEFAULT 'pedestrian_zone',
             geom GEOMETRY(MultiPolygon, 4326)
         );
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ped_buffer_geom ON pedestrian_buffer USING GIST (geom);")
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ped_buffer_geom "
+        "ON pedestrian_buffer USING GIST (geom);"
+    )
 
-    # 2. Check source
+    # 2. Check if the source table exists
     if not table_exists(cursor, 'pedestrian_roads'):
         print("WARNING: Source table 'pedestrian_roads' not found.")
         return 0
 
-    # 3. Insert/Update Buffers (5 meters)
+    # 3. Insert buffers (5 meters)
     print("Buffering pedestrian roads (5m)...")
-    
-    # --- CORRECCIÓN AQUÍ ---
-    # Ya no intentamos leer 'name' de la tabla origen porque no existe.
-    # Usamos directamente el texto fijo 'Pedestrian Zone'.
+
+    # --- FIX APPLIED HERE ---
+    # We no longer try to read the 'name' column from the source table
+    # because it does not exist.
+    # Instead, we use a fixed text value: 'Pedestrian Zone'.
     cursor.execute("""
         INSERT INTO pedestrian_buffer (osm_id, name, sub_type, geom)
-        SELECT 
+        SELECT
             osm_id,
-            'Pedestrian Zone',  -- Texto fijo porque no hay columna 'name'
+            'Pedestrian Zone',  -- Fixed text because there is no 'name' column
             'pedestrian_zone',
-            ST_Multi(ST_Transform(ST_Buffer(ST_Transform(geom, 4326)::geography, 5)::geometry, 4326))
+            ST_Multi(
+                ST_Transform(
+                    ST_Buffer(
+                        ST_Transform(geom, 4326)::geography,
+                        5
+                    )::geometry,
+                    4326
+                )
+            )
         FROM pedestrian_roads
         ON CONFLICT (osm_id) DO NOTHING;
     """)
-    
+
     new_items = cursor.rowcount
-    print(f"Stored {new_items} items in 'pedestrian_buffer' (Exclusive). Time: {time.time() - start_time:.2f}s")
+    print(
+        f"Stored {new_items} items in 'pedestrian_buffer' (Exclusive). "
+        f"Time: {time.time() - start_time:.2f}s"
+    )
+
     return new_items
 
 def main():

@@ -252,8 +252,8 @@ The app uses the HTML5 Geolocation API combined with WFS (Web Feature Service) q
 * **Context-Aware Status:**
     * **Scenario A (Fixed Restriction):** If the user is inside a School or Playground buffer → 🔴 NO SMOKING (Always Prohibited)
     * **Scenario B (Conditional Restriction):**
-          * If the user is inside a Pedestrian Zone:Is it Daytime? → 🔴 NO SMOKING (Restricted).
-          * Is it Nighttime? → 🟢 SMOKING PERMITTED (The app ignores the polygon intersection based on the current time).
+          * **If the user is inside a Pedestrian Zone:Is it Daytime? → 🔴 NO SMOKING (Restricted).**
+          * **Is it Nighttime? → 🟢 SMOKING PERMITTED (The app ignores the polygon intersection based on the current time).**
  
 ## 4. Performance & Setup
 

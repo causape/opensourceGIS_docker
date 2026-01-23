@@ -343,9 +343,8 @@ function showPanel(properties) {
     const contentDiv = document.getElementById('infoContent');  //Get the panels where the info will be displayed
     const panel = document.getElementById('infoPanel');
     let html = '';
-
-    const dad = Object.keys(properties).find(k => k.toLowerCase() === 'detailed_info');
-
+    const detailKey = Object.keys(properties).find(k => k.toLowerCase() === 'detailed_info');
+    
     if(detailKey && properties[detailKey]) {
         html += `
             <div class="info-section">  
@@ -434,6 +433,11 @@ if ('geolocation' in navigator) {
         (position) => {
             const { longitude, latitude } = position.coords;
             userPosition = [longitude, latitude];
+            
+            //castle. Non permited area
+            //userPosition = [8.403941, 49.014229];
+            //Permited area
+            //userPosition = [8.401055, 49.029898];
 
             // Move the marker in real-time
             userMarker.setLngLat(userPosition).addTo(map);
